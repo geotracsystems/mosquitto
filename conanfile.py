@@ -17,7 +17,7 @@ class LibmosquittoConan(ConanFile):
     def build(self):
         source_dir = 'lib/'
         compiler = os.environ["CC"]
-        cflags = "-I. -I{} -DWITH_THREADING".format(source_dir)
+        cflags = "-g -I. -I{} -DWITH_THREADING".format(source_dir)
         static_lib = "libmosquitto.a"
         if self.settings.arch == "x86":
             cflags += " -m32"
