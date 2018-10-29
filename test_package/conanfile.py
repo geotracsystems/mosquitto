@@ -9,7 +9,7 @@ username = os.getenv("CONAN_USERNAME", "geotrac")
 
 class LibmosquittoTestConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
-    requires = "libmosquitto/1.4.14-togs1@%s/%s" % (username, channel)
+    requires = "libmosquitto/1.4.14-togs2@%s/%s" % (username, channel)
     generators = "txt"
 
     def build(self):
@@ -20,7 +20,7 @@ class LibmosquittoTestConan(ConanFile):
                 cflags += "-m32"
             if self.settings.arch == "x86_64":
                 cflags += "-m64"
-            ldflags = "-lpthread"
+            ldflags = "-lpthread -lssl -lcrypto"
             os.mkdir("bin")
             lib_path = os.path.join(os.getcwd(), "lib")
             for source_file in os.listdir(self.conanfile_directory):

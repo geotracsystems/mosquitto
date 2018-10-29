@@ -4,7 +4,7 @@ import os
 
 class LibmosquittoConan(ConanFile):
     name = "libmosquitto"
-    version = "1.4.14-togs1"
+    version = "1.4.14-togs2"
     license = "EDL/EPL"
     description = "Mosquitto MQTT client library"
     url = "https://github.com/geotracsystems/mosquitto"
@@ -17,7 +17,8 @@ class LibmosquittoConan(ConanFile):
     def build(self):
         source_dir = 'lib/'
         compiler = os.environ["CC"]
-        cflags = "-g -I. -I{} -DWITH_THREADING".format(source_dir)
+        cflags = os.environ.get("CFLAGS", "")
+        cflags += "-g -I. -I{} -DWITH_THREADING -DWITH_TLS".format(source_dir)
         static_lib = "libmosquitto.a"
         if self.settings.arch == "x86":
             cflags += " -m32"
