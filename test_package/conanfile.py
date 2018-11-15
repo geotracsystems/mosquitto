@@ -9,7 +9,7 @@ username = os.getenv("CONAN_USERNAME", "geotrac")
 
 class LibmosquittoTestConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
-    requires = "libmosquitto/1.4.14-togs2@%s/%s" % (username, channel)
+    requires = "libmosquitto/1.5.3-togs1@%s/%s" % (username, channel)
     generators = "txt"
 
     def build(self):

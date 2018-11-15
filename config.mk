@@ -28,7 +28,7 @@ WITH_TLS:=yes
 # This must be disabled if using openssl < 1.0.
 WITH_TLS_PSK:=yes
 
-# Comment out to disable client client threading support.
+# Comment out to disable client threading support.
 WITH_THREADING:=yes
 
 # Comment out to remove bridge support from the broker. This allow the broker
@@ -57,8 +57,12 @@ WITH_MEMORY_TRACKING:=yes
 # information about the broker state.
 WITH_SYS_TREE:=yes
 
+# Build with systemd support. If enabled, mosquitto will notify systemd after
+# initialization. See README in service/systemd/ for more information.
+WITH_SYSTEMD:=no
+
 # Build with SRV lookup support.
-WITH_SRV:=yes
+WITH_SRV:=no
 
 # Build using libuuid for clientid generation (Linux only - please report if
 # supported on your platform).
@@ -76,8 +80,20 @@ WITH_DOCS:=yes
 # Build with client support for SOCK5 proxy.
 WITH_SOCKS:=yes
 
+# Strip executables and shared libraries on install.
+WITH_STRIP:=no
+
+# Build static libraries
+WITH_STATIC_LIBRARIES:=no
+
 # Build with async dns lookup support for bridges (temporary). Requires glibc.
 #WITH_ADNS:=yes
+
+# Build with epoll support.
+WITH_EPOLL:=yes
+
+# Build with bundled uthash.h
+WITH_BUNDLED_DEPS:=yes
 
 # =============================================================================
 # End of user configuration
@@ -85,9 +101,8 @@ WITH_SOCKS:=yes
 
 
 # Also bump lib/mosquitto.h, CMakeLists.txt,
-# installer/mosquitto.nsi, installer/mosquitto-cygwin.nsi
-VERSION=1.4.14
-TIMESTAMP:=$(shell date "+%F %T%z")
+# installer/mosquitto.nsi, installer/mosquitto64.nsi
+VERSION=1.5.3
 
 # Client library SO version. Bump if incompatible API/ABI changes are made.
 SOVERSION=1
@@ -112,13 +127,13 @@ else
 endif
 
 LIB_CFLAGS:=${CFLAGS} ${CPPFLAGS} -I. -I.. -I../lib
-LIB_CXXFLAGS:=$(LIB_CFLAGS) ${CPPFLAGS}
+LIB_CXXFLAGS:=$(CFLAGS) ${CPPFLAGS} -I. -I.. -I../lib
 LIB_LDFLAGS:=${LDFLAGS}
 
-BROKER_CFLAGS:=${LIB_CFLAGS} ${CPPFLAGS} -DVERSION="\"${VERSION}\"" -DTIMESTAMP="\"${TIMESTAMP}\"" -DWITH_BROKER
-CLIENT_CFLAGS:=${CFLAGS} ${CPPFLAGS} -I../lib -DVERSION="\"${VERSION}\""
+BROKER_CFLAGS:=${LIB_CFLAGS} ${CPPFLAGS} -DVERSION="\"${VERSION}\"" -DWITH_BROKER
+CLIENT_CFLAGS:=${CFLAGS} ${CPPFLAGS} -I.. -I../lib -DVERSION="\"${VERSION}\""
 
-ifneq ($(or $(findstring $(UNAME),FreeBSD), $(findstring $(UNAME),OpenBSD)),)
+ifneq ($(or $(findstring $(UNAME),FreeBSD), $(findstring $(UNAME),OpenBSD), $(findstring $(UNAME),NetBSD)),)
 	BROKER_LIBS:=-lm
 else
 	BROKER_LIBS:=-ldl -lm
@@ -182,6 +197,7 @@ endif
 ifeq ($(WITH_THREADING),yes)
 	LIB_LIBS:=$(LIB_LIBS) -lpthread
 	LIB_CFLAGS:=$(LIB_CFLAGS) -DWITH_THREADING
+	CLIENT_CFLAGS:=$(CLIENT_CFLAGS) -DWITH_THREADING
 endif
 
 ifeq ($(WITH_SOCKS),yes)
@@ -218,15 +234,15 @@ ifeq ($(WITH_SYS_TREE),yes)
 	BROKER_CFLAGS:=$(BROKER_CFLAGS) -DWITH_SYS_TREE
 endif
 
+ifeq ($(WITH_SYSTEMD),yes)
+	BROKER_CFLAGS:=$(BROKER_CFLAGS) -DWITH_SYSTEMD
+	BROKER_LIBS:=$(BROKER_LIBS) -lsystemd
+endif
+
 ifeq ($(WITH_SRV),yes)
 	LIB_CFLAGS:=$(LIB_CFLAGS) -DWITH_SRV
 	LIB_LIBS:=$(LIB_LIBS) -lcares
 	CLIENT_CFLAGS:=$(CLIENT_CFLAGS) -DWITH_SRV
-endif
-
-ifeq ($(WITH_WEBSOCKETS),yes)
-	BROKER_CFLAGS:=$(BROKER_CFLAGS) -DWITH_WEBSOCKETS
-	BROKER_LIBS:=$(BROKER_LIBS) -lwebsockets
 endif
 
 ifeq ($(UNAME),SunOS)
@@ -248,8 +264,34 @@ ifeq ($(WITH_DOCS),yes)
 	MAKE_ALL:=$(MAKE_ALL) docs
 endif
 
+ifeq ($(WITH_WEBSOCKETS),yes)
+	BROKER_CFLAGS:=$(BROKER_CFLAGS) -DWITH_WEBSOCKETS
+	BROKER_LIBS:=$(BROKER_LIBS) -lwebsockets
+endif
+
+ifeq ($(WITH_WEBSOCKETS),static)
+	BROKER_CFLAGS:=$(BROKER_CFLAGS) -DWITH_WEBSOCKETS
+	BROKER_LIBS:=$(BROKER_LIBS) -static -lwebsockets
+endif
+
 INSTALL?=install
-prefix=/usr/local
-mandir=${prefix}/share/man
-localedir=${prefix}/share/locale
+prefix?=/usr/local
+incdir?=${prefix}/include
+libdir?=${prefix}/lib${LIB_SUFFIX}
+localedir?=${prefix}/share/locale
+mandir?=${prefix}/share/man
 STRIP?=strip
+
+ifeq ($(WITH_STRIP),yes)
+	STRIP_OPTS?=-s --strip-program=${CROSS_COMPILE}${STRIP}
+endif
+
+ifeq ($(WITH_EPOLL),yes)
+	ifeq ($(UNAME),Linux)
+		BROKER_CFLAGS:=$(BROKER_CFLAGS) -DWITH_EPOLL
+	endif
+endif
+
+ifeq ($(WITH_BUNDLED_DEPS),yes)
+	BROKER_CFLAGS:=$(BROKER_CFLAGS) -Ideps
+endif

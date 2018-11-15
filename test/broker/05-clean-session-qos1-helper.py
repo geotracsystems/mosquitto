@@ -19,11 +19,11 @@ mid = 128
 publish_packet = mosq_test.gen_publish("qos1/clean_session/test", qos=1, mid=mid, payload="clean-session-message")
 puback_packet = mosq_test.gen_puback(mid)
 
-sock = mosq_test.do_client_connect(connect_packet, connack_packet)
-sock.send(publish_packet)
+port = mosq_test.get_port()
+sock = mosq_test.do_client_connect(connect_packet, connack_packet, port=port)
+mosq_test.do_send_receive(sock, publish_packet, puback_packet, "puback")
 
-if mosq_test.expect_packet(sock, "puback", puback_packet):
-    rc = 0
+rc = 0
 
 sock.close()
 

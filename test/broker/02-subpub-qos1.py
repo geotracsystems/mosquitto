@@ -26,27 +26,26 @@ puback_packet = mosq_test.gen_puback(mid)
 mid = 1
 publish_packet2 = mosq_test.gen_publish("subpub/qos1", qos=1, mid=mid, payload="message")
 
-cmd = ['../../src/mosquitto', '-p', '1888']
-broker = mosq_test.start_broker(filename=os.path.basename(__file__), cmd=cmd)
+
+port = mosq_test.get_port()
+broker = mosq_test.start_broker(filename=os.path.basename(__file__), port=port)
 
 try:
-    sock = mosq_test.do_client_connect(connect_packet, connack_packet, timeout=20)
-    sock.send(subscribe_packet)
+    sock = mosq_test.do_client_connect(connect_packet, connack_packet, timeout=20, port=port)
 
-    if mosq_test.expect_packet(sock, "suback", suback_packet):
-        sock.send(publish_packet)
+    mosq_test.do_send_receive(sock, subscribe_packet, suback_packet, "suback")
 
-        if mosq_test.expect_packet(sock, "puback", puback_packet):
+    mosq_test.do_send_receive(sock, publish_packet, puback_packet, "puback")
 
-            if mosq_test.expect_packet(sock, "publish2", publish_packet2):
-                rc = 0
+    if mosq_test.expect_packet(sock, "publish2", publish_packet2):
+        rc = 0
 
     sock.close()
 finally:
     broker.terminate()
     broker.wait()
+    (stdo, stde) = broker.communicate()
     if rc:
-        (stdo, stde) = broker.communicate()
         print(stde)
 
 exit(rc)

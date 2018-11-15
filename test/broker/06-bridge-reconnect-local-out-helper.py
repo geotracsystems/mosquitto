@@ -8,6 +8,8 @@ if cmd_subfolder not in sys.path:
 
 import mosq_test
 
+port = mosq_test.get_port()
+
 rc = 1
 keepalive = 60
 connect_packet = mosq_test.gen_connect("test-helper", keepalive=keepalive)
@@ -18,12 +20,11 @@ puback_packet = mosq_test.gen_puback(mid=1)
 
 disconnect_packet = mosq_test.gen_disconnect()
 
-sock = mosq_test.do_client_connect(connect_packet, connack_packet, port=1889, connack_error="helper connack")
-sock.send(publish_packet)
+sock = mosq_test.do_client_connect(connect_packet, connack_packet, port=port, connack_error="helper connack")
+mosq_test.do_send_receive(sock, publish_packet, puback_packet, "puback")
 
-if mosq_test.expect_packet(sock, "puback", puback_packet):
-    sock.send(disconnect_packet)
-    rc = 0
+sock.send(disconnect_packet)
+rc = 0
 
 sock.close()
 

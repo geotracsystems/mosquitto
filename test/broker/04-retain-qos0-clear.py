@@ -28,44 +28,41 @@ mid_unsub = 593
 unsubscribe_packet = mosq_test.gen_unsubscribe(mid_unsub, "retain/clear/test")
 unsuback_packet = mosq_test.gen_unsuback(mid_unsub)
 
-cmd = ['../../src/mosquitto', '-p', '1888']
-broker = mosq_test.start_broker(filename=os.path.basename(__file__), cmd=cmd)
+port = mosq_test.get_port()
+broker = mosq_test.start_broker(filename=os.path.basename(__file__), port=port)
 
 try:
-    sock = mosq_test.do_client_connect(connect_packet, connack_packet, timeout=4)
+    sock = mosq_test.do_client_connect(connect_packet, connack_packet, timeout=4, port=port)
     # Send retained message
     sock.send(publish_packet)
     # Subscribe to topic, we should get the retained message back.
-    sock.send(subscribe_packet)
+    mosq_test.do_send_receive(sock, subscribe_packet, suback_packet, "suback")
 
-    if mosq_test.expect_packet(sock, "suback", suback_packet):
-        if mosq_test.expect_packet(sock, "publish", publish_packet):
-            # Now unsubscribe from the topic before we clear the retained
-            # message.
-            sock.send(unsubscribe_packet)
+    if mosq_test.expect_packet(sock, "publish", publish_packet):
+        # Now unsubscribe from the topic before we clear the retained
+        # message.
+        mosq_test.do_send_receive(sock, unsubscribe_packet, unsuback_packet, "unsuback")
 
-            if mosq_test.expect_packet(sock, "unsuback", unsuback_packet):
-                # Now clear the retained message.
-                sock.send(retain_clear_packet)
+        # Now clear the retained message.
+        sock.send(retain_clear_packet)
 
-                # Subscribe to topic, we shouldn't get anything back apart
-                # from the SUBACK.
-                sock.send(subscribe_packet)
-                if mosq_test.expect_packet(sock, "suback", suback_packet):
-                    try:
-                        retain_clear = sock.recv(256)
-                    except socket.timeout:
-                        # This is the expected event
-                        rc = 0
-                    else:
-                        print("FAIL: Received unexpected message.")
+        # Subscribe to topic, we shouldn't get anything back apart
+        # from the SUBACK.
+        mosq_test.do_send_receive(sock, subscribe_packet, suback_packet, "suback")
+        try:
+            retain_clear = sock.recv(256)
+        except socket.timeout:
+            # This is the expected event
+            rc = 0
+        else:
+            print("FAIL: Received unexpected message.")
 
     sock.close()
 finally:
     broker.terminate()
     broker.wait()
+    (stdo, stde) = broker.communicate()
     if rc:
-        (stdo, stde) = broker.communicate()
         print(stde)
 
 exit(rc)

@@ -25,30 +25,27 @@ unsub_mid = 13
 unsubscribe_packet = mosq_test.gen_unsubscribe(unsub_mid, "retain/qos0/test")
 unsuback_packet = mosq_test.gen_unsuback(unsub_mid)
 
-cmd = ['../../src/mosquitto', '-p', '1888']
-broker = mosq_test.start_broker(filename=os.path.basename(__file__), cmd=cmd)
+port = mosq_test.get_port()
+broker = mosq_test.start_broker(filename=os.path.basename(__file__), port=port)
 
 try:
-    sock = mosq_test.do_client_connect(connect_packet, connack_packet, timeout=20)
+    sock = mosq_test.do_client_connect(connect_packet, connack_packet, timeout=20, port=port)
     sock.send(publish_packet)
-    sock.send(subscribe_packet)
+    mosq_test.do_send_receive(sock, subscribe_packet, suback_packet, "suback")
 
-    if mosq_test.expect_packet(sock, "suback", suback_packet):
+    if mosq_test.expect_packet(sock, "publish", publish_packet):
+        mosq_test.do_send_receive(sock, unsubscribe_packet, unsuback_packet, "unsuback")
+        mosq_test.do_send_receive(sock, subscribe_packet, suback_packet, "suback")
+
         if mosq_test.expect_packet(sock, "publish", publish_packet):
-            sock.send(unsubscribe_packet)
+            rc = 0
 
-            if mosq_test.expect_packet(sock, "unsuback", unsuback_packet):
-                sock.send(subscribe_packet)
-
-                if mosq_test.expect_packet(sock, "suback", suback_packet):
-                    if mosq_test.expect_packet(sock, "publish", publish_packet):
-                        rc = 0
     sock.close()
 finally:
     broker.terminate()
     broker.wait()
+    (stdo, stde) = broker.communicate()
     if rc:
-        (stdo, stde) = broker.communicate()
         print(stde)
 
 exit(rc)

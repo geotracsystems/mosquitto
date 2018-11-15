@@ -1,4 +1,4 @@
-include_directories(${mosquitto_SOURCE_DIR}/lib
+include_directories(${mosquitto_SOURCE_DIR} ${mosquitto_SOURCE_DIR}/lib
 			${STDBOOL_H_PATH} ${STDINT_H_PATH})
 link_directories(${mosquitto_BINARY_DIR}/lib)
 
@@ -9,7 +9,7 @@ if (${WITH_SRV} STREQUAL ON)
 endif (${WITH_SRV} STREQUAL ON)
 
 add_executable(mosquitto_pub pub_client.c ${shared_src})
-add_executable(mosquitto_sub sub_client.c ${shared_src})
+add_executable(mosquitto_sub sub_client.c sub_client_output.c ${shared_src})
 
 target_link_libraries(mosquitto_pub libmosquitto)
 target_link_libraries(mosquitto_sub libmosquitto)

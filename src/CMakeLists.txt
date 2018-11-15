@@ -4,30 +4,57 @@ include_directories(${mosquitto_SOURCE_DIR} ${mosquitto_SOURCE_DIR}/src
 
 set (MOSQ_SRCS
 	conf.c
+	conf_includedir.c
 	context.c
 	database.c
+	handle_connack.c
+	handle_connect.c
+	../lib/handle_ping.c
+	../lib/handle_pubackcomp.c
+	handle_publish.c
+	../lib/handle_pubrec.c
+	../lib/handle_pubrel.c
+	../lib/handle_suback.c
+	handle_subscribe.c
+	../lib/handle_unsuback.c
+	handle_unsubscribe.c
 	lib_load.h
 	logging.c
 	loop.c
 	../lib/memory_mosq.c ../lib/memory_mosq.h
 	mosquitto.c
-	mosquitto_broker.h
+	mosquitto_broker.h mosquitto_broker_internal.h
 	net.c
 	../lib/net_mosq.c ../lib/net_mosq.h
+	../lib/packet_mosq.c ../lib/packet_mosq.h
 	persist.c persist.h
-	read_handle.c read_handle_client.c read_handle_server.c
-	../lib/read_handle_shared.c ../lib/read_handle.h
+	plugin.c
+	read_handle.c
+	../lib/read_handle.h
 	subs.c
 	security.c security_default.c
-	../lib/send_client_mosq.c ../lib/send_mosq.h
 	../lib/send_mosq.c ../lib/send_mosq.h
-	send_server.c
-	sys_tree.c
+	send_connack.c
+	../lib/send_connect.c
+	../lib/send_disconnect.c
+	../lib/send_publish.c
+	send_suback.c
+	signals.c
+	../lib/send_subscribe.c
+	../lib/send_unsubscribe.c
+	sys_tree.c sys_tree.h
 	../lib/time_mosq.c
 	../lib/tls_mosq.c
 	../lib/util_mosq.c ../lib/util_mosq.h
+	../lib/utf8_mosq.c
 	websockets.c
 	../lib/will_mosq.c ../lib/will_mosq.h)
+
+
+option(WITH_BUNDLED_DEPS "Build with bundled dependencies?" ON)
+if (${WITH_BUNDLED_DEPS} STREQUAL ON)
+	include_directories(${mosquitto_SOURCE_DIR} ${mosquitto_SOURCE_DIR}/src/deps)
+endif (${WITH_BUNDLED_DEPS} STREQUAL ON)
 
 option(INC_BRIDGE_SUPPORT
 	"Include bridge support for connecting to other brokers?" ON)
@@ -66,9 +93,19 @@ if (${WITH_SYS_TREE} STREQUAL ON)
 	add_definitions("-DWITH_SYS_TREE")
 endif (${WITH_SYS_TREE} STREQUAL ON)
 
-option(WITH_WEBSOCKETS
-	"Include websockets support?" OFF)
-if (${WITH_WEBSOCKETS} STREQUAL ON)
+if (CMAKE_SYSTEM_NAME STREQUAL Linux)
+	option(WITH_SYSTEMD
+		"Include systemd support?" OFF)
+	if (${WITH_SYSTEMD} STREQUAL ON)
+		add_definitions("-DWITH_SYSTEMD")
+		find_library(SYSTEMD_LIBRARY systemd)
+		set (MOSQ_LIBS ${MOSQ_LIBS} ${SYSTEMD_LIBRARY})
+	endif (${WITH_SYSTEMD} STREQUAL ON)
+endif (CMAKE_SYSTEM_NAME STREQUAL Linux)
+
+option(WITH_WEBSOCKETS "Include websockets support?" OFF)
+option(STATIC_WEBSOCKETS "Use the static libwebsockets library?" OFF)
+if (${WITH_WEBSOCKETS} STREQUAL ON )
 	add_definitions("-DWITH_WEBSOCKETS")
 endif (${WITH_WEBSOCKETS} STREQUAL ON)
 
@@ -77,8 +114,6 @@ if (WIN32 OR CYGWIN)
 endif (WIN32 OR CYGWIN)
 
 add_definitions (-DWITH_BROKER)
-
-add_executable(mosquitto ${MOSQ_SRCS})
 
 set (MOSQ_LIBS ${MOSQ_LIBS} ${OPENSSL_LIBRARIES})
 
@@ -109,7 +144,15 @@ if (WIN32)
 endif (WIN32)
 
 if (${WITH_WEBSOCKETS} STREQUAL ON)
-	set (MOSQ_LIBS ${MOSQ_LIBS} websockets)
+	if (${STATIC_WEBSOCKETS} STREQUAL ON)
+		set (MOSQ_LIBS ${MOSQ_LIBS} websockets_static)
+		if (WIN32)
+			set (MOSQ_LIBS ${MOSQ_LIBS} iphlpapi)
+			link_directories(${mosquitto_SOURCE_DIR})
+		endif (WIN32)
+	else (${STATIC_WEBSOCKETS} STREQUAL ON)
+		set (MOSQ_LIBS ${MOSQ_LIBS} websockets)
+	endif (${STATIC_WEBSOCKETS} STREQUAL ON)
 endif (${WITH_WEBSOCKETS} STREQUAL ON)
 
 # Simple detect libuuid
@@ -121,6 +164,7 @@ if(NOT APPLE)
 	endif (UUID_HEADER)
 endif(NOT APPLE)
 
+add_executable(mosquitto ${MOSQ_SRCS})
 target_link_libraries(mosquitto ${MOSQ_LIBS})
 
 if (UNIX)
@@ -132,15 +176,16 @@ if (UNIX)
 endif (UNIX)
 
 install(TARGETS mosquitto RUNTIME DESTINATION "${SBINDIR}" LIBRARY DESTINATION "${LIBDIR}")
-install(FILES mosquitto_plugin.h DESTINATION "${INCLUDEDIR}")
+install(FILES mosquitto_broker.h mosquitto_plugin.h DESTINATION "${INCLUDEDIR}")
 
 if (${WITH_TLS} STREQUAL ON)
 	add_executable(mosquitto_passwd mosquitto_passwd.c)
-	target_link_libraries(mosquitto_passwd "${OPENSSL_LIBRARIES}")
+	target_link_libraries(mosquitto_passwd ${OPENSSL_LIBRARIES})
 	install(TARGETS mosquitto_passwd RUNTIME DESTINATION "${BINDIR}" LIBRARY DESTINATION "${LIBDIR}")
 endif (${WITH_TLS} STREQUAL ON)
 
-if (UNIX)
+if (UNIX AND NOT APPLE)
 	install(CODE "EXEC_PROGRAM(/sbin/ldconfig)")
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
+
 

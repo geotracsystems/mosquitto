@@ -27,6 +27,15 @@
 	</refsect1>
 
 	<refsect1>
+		<title>Generating certificates</title>
+		<para>The sections below give the openssl commands that can be used to
+			generate certificates, but without any context. The asciicast at
+			<link
+				xlink:href="https://asciinema.org/a/201826">https://asciinema.org/a/201826</link>
+			gives a full run through of how to use those commands.</para>
+	</refsect1>
+
+	<refsect1>
 		<title>Certificate Authority</title>
 		<para>Generate a certificate authority certificate and key.</para>
 		<itemizedlist mark="circle">
@@ -50,6 +59,7 @@
 		<itemizedlist mark="circle">
 			<listitem><para>openssl req -out server.csr -key server.key -new</para></listitem>
 		</itemizedlist>
+		<note><para>When prompted for the CN (Common Name), please enter either your server (or broker) hostname or domain name.</para></note>
 
 		<para>Send the CSR to the CA, or sign it with your CA key:</para>
 		<itemizedlist mark="circle">
