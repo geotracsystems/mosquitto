@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -17,10 +17,13 @@ Contributors:
 #define NET_MOSQ_H
 
 #ifndef WIN32
-#include <unistd.h>
+#  include <unistd.h>
 #else
-#include <winsock2.h>
+#  include <winsock2.h>
+#  ifndef _SSIZE_T_DEFINED
 typedef SSIZE_T ssize_t;
+#    define _SSIZE_T_DEFINED
+#  endif
 #endif
 
 #include "mosquitto_internal.h"
@@ -58,10 +61,10 @@ int net__socket_close(struct mosquitto_db *db, struct mosquitto *mosq);
 #else
 int net__socket_close(struct mosquitto *mosq);
 #endif
-int net__try_connect(struct mosquitto *mosq, const char *host, uint16_t port, mosq_sock_t *sock, const char *bind_address, bool blocking);
+int net__try_connect(const char *host, uint16_t port, mosq_sock_t *sock, const char *bind_address, bool blocking);
 int net__try_connect_step1(struct mosquitto *mosq, const char *host);
 int net__try_connect_step2(struct mosquitto *mosq, uint16_t port, mosq_sock_t *sock);
-int net__socket_connect_step3(struct mosquitto *mosq, const char *host, uint16_t port, const char *bind_address, bool blocking);
+int net__socket_connect_step3(struct mosquitto *mosq, const char *host);
 int net__socket_nonblock(mosq_sock_t *sock);
 int net__socketpair(mosq_sock_t *sp1, mosq_sock_t *sp2);
 
@@ -69,8 +72,15 @@ ssize_t net__read(struct mosquitto *mosq, void *buf, size_t count);
 ssize_t net__write(struct mosquitto *mosq, void *buf, size_t count);
 
 #ifdef WITH_TLS
+void net__print_ssl_error(struct mosquitto *mosq);
 int net__socket_apply_tls(struct mosquitto *mosq);
 int net__socket_connect_tls(struct mosquitto *mosq);
+int mosquitto__verify_ocsp_status_cb(SSL * ssl, void *arg);
+UI_METHOD *net__get_ui_method(void);
+#define ENGINE_FINISH(e) if(e) ENGINE_finish(e)
+#define ENGINE_SECRET_MODE "SECRET_MODE"
+#define ENGINE_SECRET_MODE_SHA 0x1000
+#define ENGINE_PIN "PIN"
 #endif
 
 #endif

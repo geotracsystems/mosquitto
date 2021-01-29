@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -16,6 +16,10 @@ Contributors:
 
 #ifndef MOSQUITTO_BROKER_H
 #define MOSQUITTO_BROKER_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stdbool.h>
 
@@ -140,5 +144,29 @@ int mosquitto_client_sub_count(const struct mosquitto *client);
  * Retrieve the username associated with a client.
  */
 const char *mosquitto_client_username(const struct mosquitto *client);
+
+
+/* Function: mosquitto_set_username
+ *
+ * Set the username for a client.
+ *
+ * This removes and replaces the current username for a client and hence
+ * updates its access.
+ *
+ * username can be NULL, in which case the client will become anonymous, but
+ * must not be zero length.
+ *
+ * In the case of error, the client will be left with its original username.
+ *
+ * Returns:
+ *   MOSQ_ERR_SUCCESS - on success
+ *   MOSQ_ERR_INVAL - if client is NULL, or if username is zero length
+ *   MOSQ_ERR_NOMEM - on out of memory
+ */
+int mosquitto_set_username(struct mosquitto *client, const char *username);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

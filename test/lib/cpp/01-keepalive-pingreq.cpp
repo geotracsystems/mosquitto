@@ -31,12 +31,13 @@ int main(int argc, char *argv[])
 
 	mosq = new mosquittopp_test("01-keepalive-pingreq");
 
-	mosq->connect("localhost", port, 4);
+	mosq->connect("localhost", port, 5);
 
 	while(run == -1){
 		mosq->loop();
 	}
 
+	delete mosq;
 	mosqpp::lib_cleanup();
 
 	return run;

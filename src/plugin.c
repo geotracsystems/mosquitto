@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2016-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2016-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -19,6 +19,7 @@ Contributors:
 #include "mosquitto_broker_internal.h"
 #include "mosquitto_internal.h"
 #include "mosquitto_broker.h"
+#include "memory_mosq.h"
 
 #ifdef WITH_TLS
 #  include <openssl/ssl.h>
@@ -32,7 +33,7 @@ const char *mosquitto_client_address(const struct mosquitto *client)
 
 bool mosquitto_client_clean_session(const struct mosquitto *client)
 {
-	return client->clean_session;
+	return client->clean_start;
 }
 
 
@@ -64,7 +65,14 @@ void *mosquitto_client_certificate(const struct mosquitto *client)
 
 int mosquitto_client_protocol(const struct mosquitto *client)
 {
-	return client->protocol;
+#ifdef WITH_WEBSOCKETS
+	if(client->wsi){
+		return mp_websockets;
+	}else
+#endif
+	{
+		return mp_mqtt;
+	}
 }
 
 
@@ -85,3 +93,33 @@ const char *mosquitto_client_username(const struct mosquitto *context)
 		return context->username;
 	}
 }
+
+int mosquitto_set_username(struct mosquitto *client, const char *username)
+{
+	char *u_dup;
+	char *old;
+	int rc;
+
+	if(!client) return MOSQ_ERR_INVAL;
+
+	if(username){
+		u_dup = mosquitto__strdup(username);
+		if(!u_dup) return MOSQ_ERR_NOMEM;
+	}else{
+		u_dup = NULL;
+	}
+
+	old = client->username;
+	client->username = u_dup;
+
+	rc = acl__find_acls(mosquitto__get_db(), client);
+	if(rc){
+		client->username = old;
+		mosquitto__free(u_dup);
+		return rc;
+	}else{
+		mosquitto__free(old);
+		return MOSQ_ERR_SUCCESS;
+	}
+}
+

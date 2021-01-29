@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -26,7 +26,10 @@ Contributors:
 #include "mosquitto_internal.h"
 #include "logging_mosq.h"
 #include "memory_mosq.h"
+#include "mqtt_protocol.h"
 #include "packet_mosq.h"
+#include "property_mosq.h"
+#include "util_mosq.h"
 
 
 int handle__suback(struct mosquitto *mosq)
@@ -37,8 +40,16 @@ int handle__suback(struct mosquitto *mosq)
 	int qos_count;
 	int i = 0;
 	int rc;
+	mosquitto_property *properties = NULL;
+	int state;
 
 	assert(mosq);
+
+	state = mosquitto__get_state(mosq);
+	if(state != mosq_cs_active){
+		return MOSQ_ERR_PROTOCOL;
+	}
+
 #ifdef WITH_BROKER
 	log__printf(NULL, MOSQ_LOG_DEBUG, "Received SUBACK from %s", mosq->id);
 #else
@@ -46,6 +57,12 @@ int handle__suback(struct mosquitto *mosq)
 #endif
 	rc = packet__read_uint16(&mosq->in_packet, &mid);
 	if(rc) return rc;
+	if(mid == 0) return MOSQ_ERR_PROTOCOL;
+
+	if(mosq->protocol == mosq_p_mqtt5){
+		rc = property__read_all(CMD_SUBACK, &mosq->in_packet, &properties);
+		if(rc) return rc;
+	}
 
 	qos_count = mosq->in_packet.remaining_length - mosq->in_packet.pos;
 	granted_qos = mosquitto__malloc(qos_count*sizeof(int));
@@ -59,14 +76,23 @@ int handle__suback(struct mosquitto *mosq)
 		granted_qos[i] = (int)qos;
 		i++;
 	}
-#ifndef WITH_BROKER
+#ifdef WITH_BROKER
+	/* Immediately free, we don't do anything with Reason String or User Property at the moment */
+	mosquitto_property_free_all(&properties);
+#else
 	pthread_mutex_lock(&mosq->callback_mutex);
 	if(mosq->on_subscribe){
 		mosq->in_callback = true;
 		mosq->on_subscribe(mosq, mosq->userdata, mid, qos_count, granted_qos);
 		mosq->in_callback = false;
 	}
+	if(mosq->on_subscribe_v5){
+		mosq->in_callback = true;
+		mosq->on_subscribe_v5(mosq, mosq->userdata, mid, qos_count, granted_qos, properties);
+		mosq->in_callback = false;
+	}
 	pthread_mutex_unlock(&mosq->callback_mutex);
+	mosquitto_property_free_all(&properties);
 #endif
 	mosquitto__free(granted_qos);
 

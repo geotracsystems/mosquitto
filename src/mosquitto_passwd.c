@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2012-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -17,6 +17,7 @@ Contributors:
 #include "config.h"
 
 #include <errno.h>
+#include <openssl/opensslv.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/buffer.h>
@@ -45,10 +46,60 @@ Contributors:
 #  include <stdbool.h>
 #  include <unistd.h>
 #  include <termios.h>
+#  include <sys/stat.h>
 #endif
 
-#define MAX_BUFFER_LEN 1024
+#define MAX_BUFFER_LEN 65536
 #define SALT_LEN 12
+
+#include "misc_mosq.h"
+
+struct cb_helper {
+	const char *line;
+	const char *username;
+	const char *password;
+	bool found;
+};
+
+#ifdef WIN32
+static FILE *mpw_tmpfile(void)
+{
+	return tmpfile();
+}
+#else
+
+static char alphanum[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+static unsigned char tmpfile_path[36];
+static FILE *mpw_tmpfile(void)
+{
+	int fd;
+	size_t i;
+
+	if(RAND_bytes(tmpfile_path, sizeof(tmpfile_path)) != 1){
+		return NULL;
+	}
+
+	strcpy((char *)tmpfile_path, "/tmp/");
+
+	for(i=strlen((char *)tmpfile_path); i<sizeof(tmpfile_path)-8; i++){
+		tmpfile_path[i] = alphanum[tmpfile_path[i]%(sizeof(alphanum)-1)];
+	}
+	tmpfile_path[sizeof(tmpfile_path)-8] = '-';
+	for(i=sizeof(tmpfile_path)-7; i<sizeof(tmpfile_path)-1; i++){
+		tmpfile_path[i] = 'X';
+	}
+	tmpfile_path[sizeof(tmpfile_path)-1] = '\0';
+
+	umask(077);
+	fd = mkstemp((char *)tmpfile_path);
+	if(fd < 0) return NULL;
+	unlink((char *)tmpfile_path);
+
+	return fdopen(fd, "w+");
+}
+#endif
+
 
 int base64_encode(unsigned char *in, unsigned int in_len, char **encoded)
 {
@@ -82,13 +133,13 @@ void print_usage(void)
 {
 	printf("mosquitto_passwd is a tool for managing password files for mosquitto.\n\n");
 	printf("Usage: mosquitto_passwd [-c | -D] passwordfile username\n");
-	printf("       mosquitto_passwd -b passwordfile username password\n");
+	printf("       mosquitto_passwd [-c] -b passwordfile username password\n");
 	printf("       mosquitto_passwd -U passwordfile\n");
 	printf(" -b : run in batch mode to allow passing passwords on the command line.\n");
 	printf(" -c : create a new password file. This will overwrite existing files.\n");
 	printf(" -D : delete the username rather than adding/updating its password.\n");
 	printf(" -U : update a plain text password file to use hashed passwords.\n");
-	printf("\nSee http://mosquitto.org/ for more information.\n\n");
+	printf("\nSee https://mosquitto.org/ for more information.\n\n");
 }
 
 int output_new_password(FILE *fptr, const char *username, const char *password)
@@ -157,77 +208,157 @@ int output_new_password(FILE *fptr, const char *username, const char *password)
 	return 0;
 }
 
-int delete_pwuser(FILE *fptr, FILE *ftmp, const char *username)
-{
-	char buf[MAX_BUFFER_LEN];
-	char lbuf[MAX_BUFFER_LEN], *token;
-	bool found = false;
 
-	while(!feof(fptr) && fgets(buf, MAX_BUFFER_LEN, fptr)){
-		memcpy(lbuf, buf, MAX_BUFFER_LEN);
-		token = strtok(lbuf, ":");
-		if(strcmp(username, token)){
-			fprintf(ftmp, "%s", buf);
-		}else{
-			found = true;
+static int pwfile_iterate(FILE *fptr, FILE *ftmp,
+		int (*cb)(FILE *, FILE *, const char *, const char *, const char *, struct cb_helper *),
+		struct cb_helper *helper)
+{
+	char *buf;
+	int buflen = 1024;
+	char *lbuf;
+	int lbuflen;
+	int rc = 1;
+	int line = 0;
+	char *username, *password;
+
+	buf = malloc(buflen);
+	if(buf == NULL){
+		fprintf(stderr, "Error: Out of memory.\n");
+		return 1;
+	}
+	lbuflen = buflen;
+	lbuf = malloc(lbuflen);
+	if(lbuf == NULL){
+		fprintf(stderr, "Error: Out of memory.\n");
+		free(buf);
+		return 1;
+	}
+
+	while(!feof(fptr) && fgets_extending(&buf, &buflen, fptr)){
+		if(lbuflen != buflen){
+			free(lbuf);
+			lbuflen = buflen;
+			lbuf = malloc(lbuflen);
+			if(lbuf == NULL){
+				fprintf(stderr, "Error: Out of memory.\n");
+				free(buf);
+				return 1;
+			}
+		}
+		memcpy(lbuf, buf, buflen);
+		line++;
+		username = strtok(buf, ":");
+		password = strtok(NULL, ":");
+		if(username == NULL || password == NULL){
+			fprintf(stderr, "Error: Corrupt password file at line %d.\n", line);
+			free(lbuf);
+			free(buf);
+			return 1;
+		}
+		username = misc__trimblanks(username);
+		password = misc__trimblanks(password);
+
+		if(strlen(username) == 0 || strlen(password) == 0){
+			fprintf(stderr, "Error: Corrupt password file at line %d.\n", line);
+			free(lbuf);
+			free(buf);
+			return 1;
+		}
+
+		rc = cb(fptr, ftmp, username, password, lbuf, helper);
+		if(rc){
+			break;
 		}
 	}
-	if(!found){
-		fprintf(stderr, "Warning: User %s not found in password file.\n", username);
+	free(lbuf);
+	free(buf);
+
+	return rc;
+}
+
+
+/* ======================================================================
+ * Delete a user from the password file
+ * ====================================================================== */
+static int delete_pwuser_cb(FILE *fptr, FILE *ftmp, const char *username, const char *password, const char *line, struct cb_helper *helper)
+{
+	if(strcmp(username, helper->username)){
+		/* If this isn't the username to delete, write it to the new file */
+		fprintf(ftmp, "%s", line);
+	}else{
+		/* Don't write the matching username to the file. */
+		helper->found = true;
 	}
 	return 0;
+}
+
+int delete_pwuser(FILE *fptr, FILE *ftmp, const char *username)
+{
+	struct cb_helper helper;
+	int rc;
+
+	memset(&helper, 0, sizeof(helper));
+	helper.username = username;
+	rc = pwfile_iterate(fptr, ftmp, delete_pwuser_cb, &helper);
+
+	if(helper.found == false){
+		fprintf(stderr, "Warning: User %s not found in password file.\n", username);
+		return 1;
+	}
+	return rc;
+}
+
+
+
+/* ======================================================================
+ * Update a plain text password file to use hashes
+ * ====================================================================== */
+static int update_file_cb(FILE *fptr, FILE *ftmp, const char *username, const char *password, const char *line, struct cb_helper *helper)
+{
+	return output_new_password(ftmp, username, password);
 }
 
 int update_file(FILE *fptr, FILE *ftmp)
 {
-	char buf[MAX_BUFFER_LEN];
-	char lbuf[MAX_BUFFER_LEN];
-	char *username, *password;
-	int rc;
-	int len;
+	return pwfile_iterate(fptr, ftmp, update_file_cb, NULL);
+}
 
-	while(!feof(fptr) && fgets(buf, MAX_BUFFER_LEN, fptr)){
-		memcpy(lbuf, buf, MAX_BUFFER_LEN);
-		username = strtok(lbuf, ":");
-		password = strtok(NULL, ":");
-		if(password){
-			len = strlen(password);
-			while(len && (password[len-1] == '\n' || password[len-1] == '\r')){
-				password[len-1] = '\0';
-				len = strlen(password);
-			}
-			rc = output_new_password(ftmp, username, password);
-			if(rc) return rc;
-		}else{
-			fprintf(ftmp, "%s", username);
-		}
+
+/* ======================================================================
+ * Update an existing user password / create a new password
+ * ====================================================================== */
+static int update_pwuser_cb(FILE *fptr, FILE *ftmp, const char *username, const char *password, const char *line, struct cb_helper *helper)
+{
+	int rc = 0;
+
+	if(strcmp(username, helper->username)){
+		/* If this isn't the matching user, then writing out the exiting line */
+		fprintf(ftmp, "%s", line);
+	}else{
+		/* Write out a new line for our matching username */
+		helper->found = true;
+		rc = output_new_password(ftmp, username, helper->password);
 	}
-	return 0;
+	return rc;
 }
 
 int update_pwuser(FILE *fptr, FILE *ftmp, const char *username, const char *password)
 {
-	char buf[MAX_BUFFER_LEN];
-	char lbuf[MAX_BUFFER_LEN], *token;
-	bool found = false;
-	int rc = 1;
+	struct cb_helper helper;
+	int rc;
 
-	while(!feof(fptr) && fgets(buf, MAX_BUFFER_LEN, fptr)){
-		memcpy(lbuf, buf, MAX_BUFFER_LEN);
-		token = strtok(lbuf, ":");
-		if(strcmp(username, token)){
-			fprintf(ftmp, "%s", buf);
-		}else{
-			rc = output_new_password(ftmp, username, password);
-			found = true;
-		}
-	}
-	if(found){
+	memset(&helper, 0, sizeof(helper));
+	helper.username = username;
+	helper.password = password;
+	rc = pwfile_iterate(fptr, ftmp, update_pwuser_cb, &helper);
+
+	if(helper.found){
 		return rc;
 	}else{
 		return output_new_password(ftmp, username, password);
 	}
 }
+
 
 int gets_quiet(char *s, int len)
 {
@@ -283,13 +414,15 @@ int gets_quiet(char *s, int len)
 #endif
 }
 
-int get_password(char *password, int len)
+int get_password(char *password, size_t len)
 {
 	char pw1[MAX_BUFFER_LEN], pw2[MAX_BUFFER_LEN];
+	size_t minLen;
+	minLen = len < MAX_BUFFER_LEN ? len : MAX_BUFFER_LEN;
 
 	printf("Password: ");
 	fflush(stdout);
-	if(gets_quiet(pw1, MAX_BUFFER_LEN)){
+	if(gets_quiet(pw1, minLen)){
 		fprintf(stderr, "Error: Empty password.\n");
 		return 1;
 	}
@@ -297,7 +430,7 @@ int get_password(char *password, int len)
 
 	printf("Reenter password: ");
 	fflush(stdout);
-	if(gets_quiet(pw2, MAX_BUFFER_LEN)){
+	if(gets_quiet(pw2, minLen)){
 		fprintf(stderr, "Error: Empty password.\n");
 		return 1;
 	}
@@ -308,14 +441,14 @@ int get_password(char *password, int len)
 		return 1;
 	}
 
-	strncpy(password, pw1, len);
+	strncpy(password, pw1, minLen);
 	return 0;
 }
 
 int copy_contents(FILE *src, FILE *dest)
 {
 	char buf[MAX_BUFFER_LEN];
-	int len;
+	size_t len;
 
 	rewind(src);
 	rewind(dest);
@@ -366,6 +499,9 @@ void handle_sigint(int signal)
 	ts.c_lflag |= ECHO | ICANON;
 	tcsetattr(0, TCSANOW, &ts);
 #endif
+
+	UNUSED(signal);
+
 	exit(0);
 }
 
@@ -387,7 +523,13 @@ int main(int argc, char *argv[])
 	signal(SIGINT, handle_sigint);
 	signal(SIGTERM, handle_sigint);
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || OPENSSL_API_COMPAT < 0x10100000L
 	OpenSSL_add_all_digests();
+#else
+	OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS \
+			| OPENSSL_INIT_ADD_ALL_DIGESTS \
+			| OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
 
 	if(argc == 1){
 		print_usage();
@@ -396,12 +538,22 @@ int main(int argc, char *argv[])
 
 	if(!strcmp(argv[1], "-c")){
 		create_new = true;
-		if(argc != 4){
-			fprintf(stderr, "Error: -c argument given but password file or username missing.\n");
-			return 1;
-		}else{
+		if(argc == 4){
 			password_file_tmp = argv[2];
 			username = argv[3];
+		}else if(argc == 6){
+			if(!strcmp(argv[2], "-b")){
+				batch_mode = true;
+				password_file_tmp = argv[3];
+				username = argv[4];
+				password_cmd = argv[5];
+			}else{
+				fprintf(stderr, "Error: Incorrect number of arguments.\n");
+				return 1;
+			}
+		}else{
+			fprintf(stderr, "Error: -c argument given but password file or username missing.\n");
+			return 1;
 		}
 	}else if(!strcmp(argv[1], "-D")){
 		delete_user = true;
@@ -437,6 +589,14 @@ int main(int argc, char *argv[])
 		print_usage();
 		return 1;
 	}
+	if(username && strlen(username) > 65535){
+		fprintf(stderr, "Error: Username must be less than 65536 characters long.\n");
+		return 1;
+	}
+	if(password_cmd && strlen(password_cmd) > 65535){
+		fprintf(stderr, "Error: Password must be less than 65536 characters long.\n");
+		return 1;
+	}
 
 #ifdef WIN32
 	password_file = _fullpath(NULL, password_file_tmp, 0);
@@ -461,8 +621,14 @@ int main(int argc, char *argv[])
 #endif
 
 	if(create_new){
-		rc = get_password(password, 1024);
-		if(rc) return rc;
+		if(batch_mode == false){
+			rc = get_password(password, MAX_BUFFER_LEN);
+			if(rc){
+				free(password_file);
+				return rc;
+			}
+			password_cmd = password;
+		}
 		fptr = fopen(password_file, "wt");
 		if(!fptr){
 			fprintf(stderr, "Error: Unable to open file %s for writing. %s.\n", password_file, strerror(errno));
@@ -470,7 +636,7 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 		free(password_file);
-		rc = output_new_password(fptr, username, password);
+		rc = output_new_password(fptr, username, password_cmd);
 		fclose(fptr);
 		return rc;
 	}else{
@@ -497,7 +663,7 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
-		ftmp = tmpfile();
+		ftmp = mpw_tmpfile();
 		if(!ftmp){
 			fprintf(stderr, "Error: Unable to open temporary file. %s.\n", strerror(errno));
 			fclose(fptr);
@@ -513,7 +679,7 @@ int main(int argc, char *argv[])
 				/* Update password for individual user */
 				rc = update_pwuser(fptr, ftmp, username, password_cmd);
 			}else{
-				rc = get_password(password, 1024);
+				rc = get_password(password, MAX_BUFFER_LEN);
 				if(rc){
 					fclose(fptr);
 					fclose(ftmp);

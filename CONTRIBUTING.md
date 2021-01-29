@@ -10,8 +10,8 @@ The Mosquitto project has been created to provide a light weight, open-source
 implementation, of an MQTT broker to allow new, existing, and emerging
 applications for Machine-to-Machine (M2M) and Internet of Things (IoT).
 
-- <http://mosquitto.org/>
-- <https://projects.eclipse.org/projects/technology.mosquitto>
+- <https://mosquitto.org/>
+- <https://projects.eclipse.org/projects/iot.mosquitto>
 
 
 Source
@@ -19,7 +19,7 @@ Source
 
 The Mosquitto code is stored in a git repository.
 
-- http://github.com/eclipse/mosquitto
+- https://github.com/eclipse/mosquitto
 
 You can contribute bugfixes and new features by sending pull requests through GitHub.
 

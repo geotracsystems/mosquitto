@@ -1,14 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Test whether a client subscribed to a topic receives its own message sent to that topic.
 
-import inspect, os, sys
-# From http://stackoverflow.com/questions/279237/python-import-a-module-from-a-folder
-cmd_subfolder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile( inspect.currentframe() ))[0],"..")))
-if cmd_subfolder not in sys.path:
-    sys.path.insert(0, cmd_subfolder)
-
-import mosq_test
+from mosq_test_helper import *
 
 rc = 1
 mid = 530
@@ -44,6 +38,7 @@ try:
 
     if mosq_test.expect_packet(sock, "publish2", publish_packet2):
         mosq_test.do_send_receive(sock, pubrec_packet2, pubrel_packet2, "pubrel2")
+        sock.send(pubcomp_packet2)
         # Broker side of flow complete so can quit here.
         rc = 0
 
@@ -53,7 +48,7 @@ finally:
     broker.wait()
     (stdo, stde) = broker.communicate()
     if rc:
-        print(stde)
+        print(stde.decode('utf-8'))
 
 exit(rc)
 
