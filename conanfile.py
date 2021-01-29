@@ -4,7 +4,7 @@ import os
 
 class LibmosquittoConan(ConanFile):
     name = "libmosquitto"
-    version = "1.5.4-togs2"
+    version = "1.6.10-togs1"
     license = "EDL/EPL"
     description = "Mosquitto MQTT client library"
     url = "https://github.com/geotracsystems/mosquitto"
