@@ -9,7 +9,7 @@
 !define env_hklm 'HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"'
 
 Name "Eclipse Mosquitto"
-!define VERSION 1.5.4
+!define VERSION 1.6.10
 OutFile "mosquitto-${VERSION}-install-windows-x86.exe"
 
 InstallDir "$PROGRAMFILES\mosquitto"
@@ -18,7 +18,6 @@ InstallDir "$PROGRAMFILES\mosquitto"
 ; Installer pages
 !insertmacro MUI_PAGE_WELCOME
 
-Page custom DependencyPage
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -46,6 +45,7 @@ Section "Files" SecInstall
 	File "..\build\src\Release\mosquitto_passwd.exe"
 	File "..\build\client\Release\mosquitto_pub.exe"
 	File "..\build\client\Release\mosquitto_sub.exe"
+	File "..\build\client\Release\mosquitto_rr.exe"
 	File "..\build\lib\Release\mosquitto.dll"
 	File "..\build\lib\cpp\Release\mosquittopp.dll"
 	File "..\aclfile.example"
@@ -55,8 +55,8 @@ Section "Files" SecInstall
 	File "..\readme.md"
 	File "..\readme-windows.txt"
 	;File "C:\pthreads\Pre-built.2\dll\x86\pthreadVC2.dll"
-	;File "C:\OpenSSL-Win32\bin\libssl_1-1.dll"
-	;File "C:\OpenSSL-Win32\bin\libcrypto_1-1.dll"
+	File "C:\OpenSSL-Win32\bin\libssl-1_1.dll"
+	File "C:\OpenSSL-Win32\bin\libcrypto-1_1.dll"
 	File "..\edl-v10"
 	File "..\epl-v10"
 
@@ -81,12 +81,17 @@ Section "Files" SecInstall
 	SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
 SectionEnd
 
+Section "Service" SecService
+	ExecWait '"$INSTDIR\mosquitto.exe" install'
+SectionEnd
+
 Section "Uninstall"
 	ExecWait '"$INSTDIR\mosquitto.exe" uninstall'
 	Delete "$INSTDIR\mosquitto.exe"
 	Delete "$INSTDIR\mosquitto_passwd.exe"
 	Delete "$INSTDIR\mosquitto_pub.exe"
 	Delete "$INSTDIR\mosquitto_sub.exe"
+	Delete "$INSTDIR\mosquitto_rr.exe"
 	Delete "$INSTDIR\mosquitto.dll"
 	Delete "$INSTDIR\mosquittopp.dll"
 	Delete "$INSTDIR\aclfile.example"
@@ -96,8 +101,8 @@ Section "Uninstall"
 	Delete "$INSTDIR\readme.txt"
 	Delete "$INSTDIR\readme-windows.txt"
 	;Delete "$INSTDIR\pthreadVC2.dll"
-	;Delete "$INSTDIR\libssl_1-1.dll"
-	;Delete "$INSTDIR\libcrypto_1-1.dll"
+	Delete "$INSTDIR\libssl-1_1.dll"
+	Delete "$INSTDIR\libcrypto-1_1.dll"
 	Delete "$INSTDIR\edl-v10"
 	Delete "$INSTDIR\epl-v10"
 
@@ -116,32 +121,10 @@ Section "Uninstall"
 SectionEnd
 
 LangString DESC_SecInstall ${LANG_ENGLISH} "The main installation."
+LangString DESC_SecService ${LANG_ENGLISH} "Install mosquitto as a Windows service?"
+
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
 	!insertmacro MUI_DESCRIPTION_TEXT ${SecInstall} $(DESC_SecInstall)
+	!insertmacro MUI_DESCRIPTION_TEXT ${SecService} $(DESC_SecService)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
-Var Dialog
-Var OSSLLink
-Var PTHLink
-
-Function DependencyPage
-	nsDialogs::Create 1018
-	Pop $Dialog
-
-	${If} $Dialog == error
-		Abort
-	${EndIf}
-
-	${NSD_CreateLabel} 0 0 100% 12u "OpenSSL - install 'Win32 OpenSSL v1.1.0* Light' then copy libssl_1-1.dll and libcrypto_1-1.dll to the mosquitto directory"
-	${NSD_CreateLink} 13u 13u 100% 12u "http://slproweb.com/products/Win32OpenSSL.html"
-	Pop $OSSLLink
-	${NSD_OnClick} $OSSLLink OnClick_OSSL
-
-	!insertmacro MUI_HEADER_TEXT_PAGE "Dependencies" "This page lists packages that must be installed if not already present"
-	nsDialogs::Show
-FunctionEnd
-
-Function OnClick_OSSL
-	Pop $0
-	ExecShell "open" "http://slproweb.com/products/Win32OpenSSL.html"
-FunctionEnd

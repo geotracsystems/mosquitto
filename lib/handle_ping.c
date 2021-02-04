@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -28,7 +28,7 @@ Contributors:
 #include "logging_mosq.h"
 #include "memory_mosq.h"
 #include "messages_mosq.h"
-#include "mqtt3_protocol.h"
+#include "mqtt_protocol.h"
 #include "net_mosq.h"
 #include "packet_mosq.h"
 #include "read_handle.h"
@@ -37,7 +37,15 @@ Contributors:
 
 int handle__pingreq(struct mosquitto *mosq)
 {
+	int state;
+
 	assert(mosq);
+
+	state = mosquitto__get_state(mosq);
+	if(state != mosq_cs_active){
+		return MOSQ_ERR_PROTOCOL;
+	}
+
 #ifdef WITH_BROKER
 	log__printf(NULL, MOSQ_LOG_DEBUG, "Received PINGREQ from %s", mosq->id);
 #else
@@ -48,7 +56,15 @@ int handle__pingreq(struct mosquitto *mosq)
 
 int handle__pingresp(struct mosquitto *mosq)
 {
+	int state;
+
 	assert(mosq);
+
+	state = mosquitto__get_state(mosq);
+	if(state != mosq_cs_active){
+		return MOSQ_ERR_PROTOCOL;
+	}
+
 	mosq->ping_t = 0; /* No longer waiting for a PINGRESP. */
 #ifdef WITH_BROKER
 	log__printf(NULL, MOSQ_LOG_DEBUG, "Received PINGRESP from %s", mosq->id);

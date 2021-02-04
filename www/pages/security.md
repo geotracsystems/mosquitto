@@ -19,6 +19,14 @@ follow the steps on [Eclipse Security] page to report it.
 Listed with most recent first. Further information on security related issues
 can be found in the [security category].
 
+* September 2019: [CVE-2019-11779]. Affecting versions **1.5** to **1.6.5**
+  inclusive, fixed in **1.6.6** and **1.5.9**. More details at [version-166-released].
+* September 2019: [CVE-2019-11778]. Affecting versions **1.6** to **1.6.4**
+  inclusive, fixed in **1.6.5**. More details at [version-166-released].
+* April 2019: No CVE assigned. Affecting versions **1.6** and **1.6.1**,
+  fixed in **1.6.2**. More details at [version-162-released].
+* December 2018: [CVE-2018-20145]. Affecting versions **1.5** to **1.5.4**
+  inclusive, fixed in **1.5.5.**. More details at [version-155-released].
 * November 2018: No CVE assigned. Affecting versions **1.4** to **1.5.3**
   inclusive, fixed in **1.5.4**. More details at [version-154-released].
 * September 2018: [CVE-2018-12543] affecting versions **1.5** to **1.5.2**
@@ -43,6 +51,9 @@ can be found in the [security category].
   inclusive, fixed in **1.4.12**. More details at
   [security-advisory-cve-2017-7650].
 
+[version-166-released]: /2019/09/version-1-6-6-released/
+[version-162-released]: /2019/04/version-1-6-2-released/
+[version-155-released]: /2018/11/version-155-released/
 [version-154-released]: /2018/11/version-154-released/
 [security-advisory-cve-2018-12543]: /2018/09/security-advisory-cve-2018-12543/
 [security-advisory-cve-2017-7651-cve-2017-7652]: /2018/02/security-advisory-cve-2017-7651-cve-2017-7652/
@@ -52,6 +63,9 @@ can be found in the [security category].
 [Eclipse Security]: https://www.eclipse.org/security/
 [security category]: /blog/categories/security/
 
+[CVE-2019-11779]: https://nvd.nist.gov/vuln/detail/CVE-2019-11779
+[CVE-2019-11778]: https://nvd.nist.gov/vuln/detail/CVE-2019-11778
+[CVE-2018-20145]: https://nvd.nist.gov/vuln/detail/CVE-2018-20145
 [CVE-2018-12543]: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-12543
 [CVE-2017-9868]: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-9868
 [CVE-2017-7655]: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-7652

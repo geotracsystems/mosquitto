@@ -1,3 +1,532 @@
+1.6.10 - 2020-05-25
+===================
+
+Broker:
+- Report invalid bridge prefix+pattern combinations at config parsing time
+  rather than letting the bridge fail later. Issue #1635.
+- Fix `mosquitto_passwd -b` not updating passwords for existing users
+  correctly. Creating a new user with `-b` worked without problem.
+  Closes #1664.
+- Fix memory leak when connecting clients rejected.
+- Don't disconnect clients that are already disconnected. This prevents the
+  session expiry being extended on SIGHUP. Closes #1521.
+- Fix support for openssl 3.0.
+- Fix check when loading persistence file of a different version than the
+  native version. Closes #1684.
+- Fix possible assert crash associated with bridge reconnecting when compiled
+  without epoll support. Closes #1700.
+ 
+Client library:
+- Don't treat an unexpected PUBACK, PUBREL, or PUBCOMP as a fatal error.
+  Issue #1629.
+- Fix support for openssl 3.0.
+- Fix memory leaks from multiple calls to
+  `mosquitto_lib_init()`/`mosquitto_lib_cleanup()`. Closes #1691.
+- Fix documentation on return code of `mosquitto_lib_init()` for Windows.
+  Closes #1690.
+
+Clients:
+- Fix mosquitto_sub %j or %J not working on Windows. Closes #1674.
+
+Build:
+- Various fixes for building with <C99 support. Closes #1622.
+- Fix use of sed on BSD. Closes #1614.
+
+
+1.6.9 - 20200227
+================
+
+Broker:
+- Fix session expiry with very large expiry intervals. Closes #1525.
+- Check ACL patterns for validity when loading. Closes #1539.
+- Use presence of password file as indicator for whether username checks
+  should take place, not whether usernames are defined in the password file.
+  Closes #1545.
+- Strip whitespace from end of config file string options. Closes #1566.
+- Satisfy valgrind when exiting on error due to not being able to open a
+  listening socket, by calling freeaddrinfo. Closes #1565.
+- Fix config->user not being freed on exit. Closes #1564.
+- Fix trailing whitespace not being trimmed on acl users. Closes #1539.
+- Fix `bind_interface` not working for the default listener. Closes #1533.
+- Improve password file parsing in the broker and mosqitto_passwd. Closes #1584.
+- Print OpenSSL errors in more situations, like when loading certificates
+  fails. Closes #1552.
+- Fix `mosquitto_client_protocol() returning incorrect values.
+
+Client library:
+- Set minimum keepalive argument to `mosquitto_connect*()` to be 5 seconds.
+  Closes #1550.
+- Fix `mosquitto_topic_matches_sub()` not returning MOSQ_ERR_INVAL if the
+  topic contains a wildcard. Closes #1589.
+
+Clients:
+- Fix `--remove-retained` not obeying the `-T` option for filtering out
+  topics. Closes #1585.
+- Default behaviour for v5 clients using `-c` is now to use infinite length
+  sessions, as with v3 clients. Closes #1546.
+
+
+1.6.8 - 20191128
+================
+
+Broker:
+- Various fixes for `allow_zero_length_clientid` config, where this option was
+  not being set correctly. Closes #1429.
+- Fix incorrect memory tracking causing problems with memory_limit option.
+  Closes #1437.
+- Fix subscription topics being limited to 200 characters instead of 200
+  hierarchy levels. Closes #1441.
+- Only a single CRL could be loaded at once. This has been fixed.
+  Closes #1442.
+- Fix problems with reloading config when `per_listener_settings` was true.
+  Closes #1459.
+- Fix retained messages with an expiry interval not being expired after being
+  restored from persistence. Closes #1464.
+- Fix messages with an expiry interval being sent without an expiry interval
+  property just before they were expired. Closes #1464.
+- Fix TLS Websockets clients not receiving messages after taking over a
+  previous connection. Closes #1489.
+- Fix MQTT 3.1.1 clients using clean session false, or MQTT 5.0 clients using
+  session-expiry-interval set to infinity never expiring, even when the global
+  `persistent_client_expiration` option was set. Closes #1494.
+
+Client library:
+- Fix publish properties not being passed to on_message_v5 callback for QoS 2
+  messages. Closes #1432.
+- Fix documentation issues in mosquitto.h. Closes #1478.
+- Document `mosquitto_connect_srv()`. Closes #1499.
+
+Clients:
+- Fix duplicate cfg definition in rr_client. Closes #1453.
+- Fix `mosquitto_pub -l` hang when stdin stream ends. Closes #1448.
+- Fix `mosquitto_pub -l` not sending the final line of stdin if it does not
+  end with a new line. Closes #1473.
+- Make documentation for `mosquitto_pub -l` match reality - blank lines are
+  sent as empty messages. Closes #1474.
+- Free memory in `mosquitto_sub` when quiting without having made a successful
+  connection. Closes #1513.
+
+Build:
+- Added `CLIENT_STATIC_LDADD` to makefile builds to allow more libraries to be
+  linked when compiling the clients with a static libmosquitto, as required
+  for e.g. openssl on some systems.
+
+Installer:
+- Fix mosquitto_rr.exe not being included in Windows installers. Closes #1463.
+
+1.6.7 - 20190925
+================
+
+Broker:
+- Add workaround for working with libwebsockets 3.2.0.
+- Fix potential crash when reloading config. Closes #1424, #1425.
+
+Client library:
+- Don't use `/` in autogenerated client ids, to avoid confusing with topics.
+- Fix `mosquitto_max_inflight_messages_set()` and `mosquitto_int_option(...,
+  MOSQ_OPT_*_MAX, ...)` behaviour. Closes #1417.
+- Fix regression on use of `mosquitto_connect_async()` not working.
+  Closes #1415 and #1422.
+
+Clients:
+- mosquitto_sub: Fix `-E` incorrectly not working unless `-d` was also
+  specified. Closes #1418.
+- Updated documentation around automatic client ids.
+
+
+1.6.6 - 20190917
+================
+
+Security:
+- Restrict topic hierarchy to 200 levels to prevent possible stack overflow.
+  Closes #1412.
+
+Broker:
+- Restrict topic hierarchy to 200 levels to prevent possible stack overflow.
+  Closes #1412.
+- mosquitto_passwd now returns 1 when attempting to update a user that does
+  not exist. Closes #1414.
+
+
+1.6.5 - 20190912
+================
+
+Broker:
+- Fix v5 DISCONNECT packets with remaining length == 2 being treated as a
+  protocol error. Closes #1367.
+- Fix support for libwebsockets 3.x.
+- Fix slow websockets performance when sending large messages. Closes #1390.
+- Fix bridges potentially not connecting on Windows. Closes #478.
+- Fix clients authorised using `use_identity_as_username` or
+  `use_subject_as_username` being disconnected on SIGHUP. Closes #1402.
+- Improve error messages in some situations when clients disconnect. Reduces
+  the number of "Socket error on client X, disconnecting" messages.
+- Fix Will for v5 clients not being sent if will delay interval was greater
+  than the session expiry interval. Closes #1401.
+- Fix CRL file not being reloaded on HUP. Closes #35.
+- Fix repeated "Error in poll" messages on Windows when only websockets
+  listeners are defined. Closes #1391.
+
+Client library:
+- Fix reconnect backoff for the situation where connections are dropped rather
+  than refused. Closes #737.
+- Fix missing locks on `mosq->state`. Closes #1374.
+
+Documentation:
+- Improve details on global/per listener options in the mosquitto.conf man page.
+  Closes #274.
+- Clarify behaviour when clients exceed the `message_size_limit`. Closes #448.
+- Improve documentation for `max_inflight_bytes`, `max_inflight_messages`,
+  and `max_queued_messages`.
+
+Build:
+- Fix missing function warnings on NetBSD.
+- Fix WITH_STATIC_LIBRARIES using CMake on Windows. Closes #1369.
+- Guard ssize_t definition on Windows. Closes #522.
+
+
+1.6.4 - 20190801
+================
+
+Broker:
+- Fix persistent clients being incorrectly expired on Raspberry Pis.
+  Closes #1272.
+- Windows: Allow other applications access to the log file when running.
+  Closes #515.
+- Fix incoming QoS 2 messages being blocked when `max_inflight_messages` was
+  set to 1. Closes #1332.
+- Fix incoming messages not being removed for a client if the topic being
+  published to does not have any subscribers. Closes #1322.
+
+Client library:
+- Fix MQTT v5 subscription options being incorrectly set for MQTT v3
+  subscriptions. Closes #1353.
+- Make behaviour of `mosquitto_connect_async()` consistent with
+  `mosquitto_connect()` when connecting to a non-existent server.
+  Closes #1345.
+- `mosquitto_string_option(mosq, MOSQ_OPT_TLS_KEYFORM, ...)` was incorrectly
+  returning `MOSQ_ERR_INVAL` with valid input. This has been fixed.
+  Closes #1360.
+- on_connect callback is now called with the correct v5 reason code if a v5
+  client connects to a v3.x broker and is sent a CONNACK with the
+  "unacceptable protocol version" connack reason code.
+- Fix memory leak when setting v5 properties in mosquitto_connect_v5().
+- Fix properties not being sent on QoS>0 PUBLISH messages.
+
+Clients:
+- mosquitto_pub: fix error codes not being returned when mosquitto_pub exits.
+  Closes #1354.
+- All clients: improve error messages when connecting to a v3.x broker when in
+  v5 mode. Closes #1344.
+
+Other:
+- Various documentation fixes.
+
+
+1.6.3 - 20190618
+================
+
+Broker:
+- Fix detection of incoming v3.1/v3.1.1 bridges. Closes #1263.
+- Fix default max_topic_alias listener config not being copied to the in-use
+  listener when compiled without TLS support.
+- Fix random number generation if compiling using `WITH_TLS=no` and on Linux
+  with glibc >= 2.25. Without this fix, no random numbers would be generated
+  for e.g. on broker client id generation, and so clients connecting expecting
+  this feature would be unable to connect.
+- Fix compilation problem related to `getrandom()` on non-glibc systems.
+- Fix Will message for a persistent client incorrectly being sent when the
+  client reconnects after a clean disconnect. Closes #1273.
+- Fix Will message for a persistent client not being sent on disconnect.
+  Closes #1273.
+- Improve documentation around the upgrading of persistence files. Closes
+  #1276.
+- Add 'extern "C"' on mosquitto_broker.h and mosquitto_plugin.h for C++ plugin
+  writing. Closes #1290.
+- Fix persistent Websockets clients not receiving messages after they
+  reconnect, having sent DISCONNECT on a previous session. Closes #1227.
+- Disable TLS renegotiation. Client initiated renegotiation is considered to
+  be a potential attack vector against servers. Closes #1257.
+- Fix incorrect shared subscription topic '$shared'.
+- Fix zero length client ids being rejected for MQTT v5 clients with clean
+  start set to true.
+- Fix MQTT v5 overlapping subscription behaviour. Clients now receive message
+  from all matching subscriptions rather than the first one encountered, which
+  ensures the maximum QoS requirement is met.
+- Fix incoming/outgoing quota problems for QoS>0.
+- Remove obsolete `store_clean_interval` from documentation.
+- Fix v4 authentication plugin never calling psk_key_get.
+
+Client library:
+- Fix typo causing build error on Windows when building without TLS support.
+  Closes #1264.
+
+Clients:
+- Fix -L url parsing when `/topic` part is missing.
+- Stop some error messages being printed even when `--quiet` was used.
+  Closes #1284.
+- Fix mosquitto_pub exiting with error code 0 when an error occurred.
+  Closes #1285.
+- Fix mosquitto_pub not using the `-c` option. Closes #1273.
+- Fix MQTT v5 clients not being able to specify a password without a username.
+  Closes #1274.
+- Fix `mosquitto_pub -l` not handling network failures. Closes #1152.
+- Fix `mosquitto_pub -l` not handling zero length input. Closes #1302.
+- Fix double free on exit in mosquitto_pub. Closes #1280.
+
+Documentation:
+- Remove references to Python binding and C++ wrapper in libmosquitto man
+  page. Closes #1266.
+
+Build:
+- CLIENT_LDFLAGS now uses LDFLAGS. Closes #1294.
+
+
+1.6.2 - 20190430
+================
+
+Broker:
+- Fix memory access after free, leading to possible crash, when v5 client with
+  Will message disconnects, where the Will message has as its first property
+  one of `content-type`, `correlation-data`, `payload-format-indicator`, or
+  `response-topic`.  Closes #1244.
+- Fix build for WITH_TLS=no. Closes #1250.
+- Fix Will message not allowing user-property properties.
+- Fix broker originated messages (e.g. $SYS/broker/version) not being
+  published when `check_retain_source` set to true. Closes #1245.
+- Fix $SYS/broker/version being incorrectly expired after 60 seconds.
+  Closes #1245.
+
+Library:
+- Fix crash after client has been unable to connect to a broker. This occurs
+  when the client is exiting and is part of the final library cleanup routine.
+  Closes #1246.
+
+Clients:
+- Fix -L url parsing. Closes #1248.
+
+
+1.6.1 - 20190426
+================
+
+Broker:
+- Document `memory_limit` option.
+
+Clients:
+- Fix compilation on non glibc systems due to missing sys/time.h header.
+
+Build:
+- Add `make check` target and document testing procedure. Closes #1230.
+- Document bundled dependencies and how to disable. Closes #1231.
+- Split CFLAGS and CPPFLAGS, and LDFLAGS and LDADD/LIBADD.
+- test/unit now respects CPPFLAGS and LDFLAGS. Closes #1232.
+- Don't call ldconfig in CMake scripts. Closes #1048.
+- Use CMAKE_INSTALL_* variables when installing in CMake. Closes #1049.
+
+
+1.6 - 20190417
+==============
+
+Broker features:
+- Add support for MQTT v5
+- Add support for OCSP stapling.
+- Add support for ALPN on bridge TLS connections. Closes #924.
+- Add support for Automotive DLT logging.
+- Add TLS Engine support.
+- Persistence file read/write performance improvements.
+- General performance improvements.
+- Add max_keepalive option, to allow a maximum keepalive value to be set for
+  MQTT v5 clients only.
+- Add `bind_interface` option which allows a listener to be bound to a
+  specific network interface, in a similar fashion to the `bind_address` option.
+  Linux only.
+- Add improved bridge restart interval based on Decorrelated Jitter.
+- Add `dhparamfile` option, to allow DH parameters to be loaded for Ephemeral
+  DH support
+- Disallow writing to $ topics where appropriate.
+- Fix mosquitto_passwd crashing on corrupt password file. Closes #1207.
+- Add explicit support for TLS v1.3.
+- Drop support for TLS v1.0.
+- Improved general support for broker generated client ids. Removed libuuid
+  dependency.
+- auto_id_prefix now defaults to 'auto-'.
+- QoS 1 and 2 flow control improvements.
+
+Client library features:
+- Add support for MQTT v5
+- Add mosquitto_subscribe_multiple() for sending subscriptions to multiple
+  topics in one command.
+- Add TLS Engine support.
+- Add explicit support for TLS v1.3.
+- Drop support for TLS v1.0.
+- QoS 1 and 2 flow control improvements.
+
+Client features:
+- Add support for MQTT v5
+- Add mosquitto_rr client, which can be used for "request-response" messaging,
+  by sending a request message and awaiting a response.
+- Add TLS Engine support.
+- Add support for ALPN on TLS connections. Closes #924.
+- Add -D option for all clients to specify MQTT v5 properties.
+- Add -E to mosquitto_sub, which causes it to exit immediately after having
+  its subscriptions acknowledged. Use with -c to create a durable client
+  session without requiring a message to be received.
+- Add --remove-retained to mosquitto_sub, which can be used to clear retained
+  messages on a broker.
+- Add --repeat and --repeat-delay to mosquitto_pub, which can be used to
+  repeat single message publishes at a regular interval.
+- -V now accepts `5, `311`, `31`, as well as `mqttv5` etc.
+- Add explicit support for TLS v1.3.
+- Drop support for TLS v1.0.
+
+Broker fixes:
+- Improve error reporting when creating listeners.
+- Fix build on SmartOS due to missing IPV6_V6ONLY. Closes #1212.
+
+Client library fixes
+- Add missing `mosquitto_userdata()` function.
+
+Client fixes:
+- mosquitto_pub wouldn't always publish all messages when using `-l` and
+  QoS>0. This has been fixed.
+- mosquitto_sub was incorrectly encoding special characters when using %j
+  output format. Closes #1220.
+
+
+1.5.8 - 20190228
+================
+
+Broker:
+- Fix clients being disconnected when ACLs are in use. This only affects the
+  case where a client connects using a username, and the anonymous ACL list is
+  defined but specific user ACLs are not defined. Closes #1162.
+- Make error messages for missing config file clearer.
+- Fix some Coverity Scan reported errors that could occur when the broker was
+  already failing to start.
+- Fix broken mosquitto_passwd on FreeBSD. Closes #1032.
+- Fix delayed bridge local subscriptions causing missing messages.
+  Closes #1174.
+
+Library:
+- Use higher resolution timer for random initialisation of client id
+  generation. Closes #1177.
+- Fix some Coverity Scan reported errors that could occur when the library was
+  already quitting.
+
+
+1.5.7 - 20190213
+================
+
+Broker:
+- Fix build failure when using WITH_ADNS=yes
+- Ensure that an error occurs if `per_listener_settings true` is given after
+  other security options. Closes #1149.
+- Fix include_dir not sorting config files before loading. This was partially
+  fixed in 1.5 previously.
+- Improve documentation around the `include_dir` option. Closes #1154.
+- Fix case where old unreferenced msg_store messages were being saved to the
+  persistence file, bloating its size unnecessarily. Closes #389.
+
+Library:
+- Fix `mosquitto_topic_matches_sub()` not returning MOSQ_ERR_INVAL for
+  invalid subscriptions like `topic/#abc`. This only affects the return value,
+  not the match/no match result, which was already correct.
+
+Build:
+- Don't require C99 compiler.
+- Add rewritten build test script and remove some build warnings.
+
+
+1.5.6 - 20190206
+================
+
+Security:
+- CVE-2018-12551: If Mosquitto is configured to use a password file for
+  authentication, any malformed data in the password file will be treated as
+  valid. This typically means that the malformed data becomes a username and no
+  password. If this occurs, clients can circumvent authentication and get access
+  to the broker by using the malformed username. In particular, a blank line
+  will be treated as a valid empty username. Other security measures are
+  unaffected. Users who have only used the mosquitto_passwd utility to create
+  and modify their password files are unaffected by this vulnerability.
+  Affects version 1.0 to 1.5.5 inclusive.
+- CVE-2018-12550: If an ACL file is empty, or has only blank lines or
+  comments, then mosquitto treats the ACL file as not being defined, which
+  means that no topic access is denied. Although denying access to all topics
+  is not a useful configuration, this behaviour is unexpected and could lead
+  to access being incorrectly granted in some circumstances. This is now
+  fixed. Affects versions 1.0 to 1.5.5 inclusive.
+- CVE-2018-12546. If a client publishes a retained message to a topic that
+  they have access to, and then their access to that topic is revoked, the
+  retained message will still be delivered to future subscribers. This
+  behaviour may be undesirable in some applications, so a configuration option
+  `check_retain_source` has been introduced to enforce checking of the
+  retained message source on publish.
+
+Broker:
+- Fixed comment handling for config options that have optional arguments.
+- Improved documentation around bridge topic remapping.
+- Handle mismatched handshakes (e.g. QoS1 PUBLISH with QoS2 reply) properly.
+- Fix spaces not being allowed in the bridge remote_username option. Closes
+  #1131.
+- Allow broker to always restart on Windows when using `log_dest file`. Closes
+  #1080.
+- Fix Will not being sent for Websockets clients. Closes #1143.
+- Windows: Fix possible crash when client disconnects. Closes #1137.
+- Fixed durable clients being unable to receive messages when offline, when
+  per_listener_settings was set to true. Closes #1081.
+- Add log message for the case where a client is disconnected for sending a
+  topic with invalid UTF-8. Closes #1144.
+
+Library:
+- Fix TLS connections not working over SOCKS.
+- Don't clear SSL context when TLS connection is closed, meaning if a user
+  provided an external SSL_CTX they have less chance of leaking references.
+
+Build:
+- Fix comparison of boolean values in CMake build. Closes #1101.
+- Fix compilation when openssl deprecated APIs are not available.
+  Closes #1094.
+- Man pages can now be built on any system. Closes #1139.
+
+
+1.5.5 - 20181211
+================
+
+Security:
+- If `per_listener_settings` is set to true, then the `acl_file` setting was
+  ignored for the "default listener" only. This has been fixed. This does not
+  affect any listeners defined with the `listener` option. Closes #1073.
+  This is now tracked as CVE-2018-20145.
+
+Broker:
+- Add `socket_domain` option to allow listeners to disable IPv6 support.
+  This is required to work around a problem in libwebsockets that means
+  sockets only listen on IPv6 by default if IPv6 support is compiled in.
+  Closes #1004.
+- When using ADNS, don't ask for all network protocols when connecting,
+  because this can lead to confusing "Protocol not supported" errors if the
+  network is down. Closes #1062.
+- Fix outgoing retained messages not being sent by bridges on initial
+  connection. Closes #1040.
+- Don't reload auth_opt_ options on reload, to match the behaviour of the
+  other plugin options. Closes #1068.
+- Print message on error when installing/uninstalling as a Windows service.
+- All non-error connect/disconnect messages are controlled by the
+  `connection_messages` option. Closes #772. Closes #613. Closes #537.
+
+Library:
+- Fix reconnect delay backoff behaviour. Closes #1027.
+- Don't call on_disconnect() twice if keepalive tests fail. Closes #1067.
+
+Client:
+- Always print leading zeros in mosquitto_sub when output format is hex.
+  Closes #1066.
+
+Build:
+- Fix building where TLS-PSK is not available. Closes #68.
+
+
 1.5.4 - 20181108
 ================
 

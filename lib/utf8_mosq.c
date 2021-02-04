@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2016-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2016-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -45,11 +45,11 @@ int mosquitto_validate_utf8(const char *str, int len)
 			codelen = 2;
 			codepoint = (ustr[i] & 0x1F);
 		}else if((ustr[i] & 0xF0) == 0xE0){
-			// 1110xxxx - 3 byte sequence
+			/* 1110xxxx - 3 byte sequence */
 			codelen = 3;
 			codepoint = (ustr[i] & 0x0F);
 		}else if((ustr[i] & 0xF8) == 0xF0){
-			// 11110xxx - 4 byte sequence
+			/* 11110xxx - 4 byte sequence */
 			if(ustr[i] > 0xF4){
 				/* Invalid, this would produce values > 0x10FFFF. */
 				return MOSQ_ERR_MALFORMED_UTF8;
@@ -80,11 +80,27 @@ int mosquitto_validate_utf8(const char *str, int len)
 		}
 
 		/* Check for overlong or out of range encodings */
-		if(codelen == 2 && codepoint < 0x0080){
-			return MOSQ_ERR_MALFORMED_UTF8;
-		}else if(codelen == 3 && codepoint < 0x0800){
+		/* Checking codelen == 2 isn't necessary here, because it is already
+		 * covered above in the C0 and C1 checks.
+		 * if(codelen == 2 && codepoint < 0x0080){
+		 *	 return MOSQ_ERR_MALFORMED_UTF8;
+		 * }else
+		*/
+		if(codelen == 3 && codepoint < 0x0800){
 			return MOSQ_ERR_MALFORMED_UTF8;
 		}else if(codelen == 4 && (codepoint < 0x10000 || codepoint > 0x10FFFF)){
+			return MOSQ_ERR_MALFORMED_UTF8;
+		}
+
+		/* Check for non-characters */
+		if(codepoint >= 0xFDD0 && codepoint <= 0xFDEF){
+			return MOSQ_ERR_MALFORMED_UTF8;
+		}
+		if((codepoint & 0xFFFF) == 0xFFFE || (codepoint & 0xFFFF) == 0xFFFF){
+			return MOSQ_ERR_MALFORMED_UTF8;
+		}
+		/* Check for control characters */
+		if(codepoint <= 0x001F || (codepoint >= 0x007F && codepoint <= 0x009F)){
 			return MOSQ_ERR_MALFORMED_UTF8;
 		}
 	}

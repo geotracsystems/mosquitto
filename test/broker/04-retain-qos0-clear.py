@@ -1,17 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Test whether a retained PUBLISH is cleared when a zero length retained
 # message is published to a topic.
 
-import socket
-
-import inspect, os, sys
-# From http://stackoverflow.com/questions/279237/python-import-a-module-from-a-folder
-cmd_subfolder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile( inspect.currentframe() ))[0],"..")))
-if cmd_subfolder not in sys.path:
-    sys.path.insert(0, cmd_subfolder)
-
-import mosq_test
+from mosq_test_helper import *
 
 rc = 1
 keepalive = 60
@@ -49,13 +41,12 @@ try:
         # Subscribe to topic, we shouldn't get anything back apart
         # from the SUBACK.
         mosq_test.do_send_receive(sock, subscribe_packet, suback_packet, "suback")
-        try:
-            retain_clear = sock.recv(256)
-        except socket.timeout:
-            # This is the expected event
-            rc = 0
-        else:
-            print("FAIL: Received unexpected message.")
+        time.sleep(1)
+        # If we do get something back, it should be before this ping, so if
+        # this succeeds then we're ok.
+        mosq_test.do_ping(sock)
+        # This is the expected event
+        rc = 0
 
     sock.close()
 finally:
@@ -63,7 +54,7 @@ finally:
     broker.wait()
     (stdo, stde) = broker.communicate()
     if rc:
-        print(stde)
+        print(stde.decode('utf-8'))
 
 exit(rc)
 

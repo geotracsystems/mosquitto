@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2019 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -18,47 +18,58 @@ Contributors:
 #include <mosquitto.h>
 #include <mosquittopp.h>
 
+#define UNUSED(A) (void)(A)
+
 namespace mosqpp {
 
 static void on_connect_wrapper(struct mosquitto *mosq, void *userdata, int rc)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+
+	UNUSED(mosq);
+
 	m->on_connect(rc);
 }
 
 static void on_connect_with_flags_wrapper(struct mosquitto *mosq, void *userdata, int rc, int flags)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_connect_with_flags(rc, flags);
 }
 
 static void on_disconnect_wrapper(struct mosquitto *mosq, void *userdata, int rc)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_disconnect(rc);
 }
 
 static void on_publish_wrapper(struct mosquitto *mosq, void *userdata, int mid)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_publish(mid);
 }
 
 static void on_message_wrapper(struct mosquitto *mosq, void *userdata, const struct mosquitto_message *message)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_message(message);
 }
 
 static void on_subscribe_wrapper(struct mosquitto *mosq, void *userdata, int mid, int qos_count, const int *granted_qos)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_subscribe(mid, qos_count, granted_qos);
 }
 
 static void on_unsubscribe_wrapper(struct mosquitto *mosq, void *userdata, int mid)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_unsubscribe(mid);
 }
 
@@ -66,6 +77,7 @@ static void on_unsubscribe_wrapper(struct mosquitto *mosq, void *userdata, int m
 static void on_log_wrapper(struct mosquitto *mosq, void *userdata, int level, const char *str)
 {
 	class mosquittopp *m = (class mosquittopp *)userdata;
+	UNUSED(mosq);
 	m->on_log(level, str);
 }
 

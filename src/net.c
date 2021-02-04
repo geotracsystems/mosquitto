@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2020 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -22,6 +22,7 @@ Contributors:
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
+#include <net/if.h>
 #else
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -45,7 +46,7 @@ Contributors:
 #endif
 
 #include "mosquitto_broker_internal.h"
-#include "mqtt3_protocol.h"
+#include "mqtt_protocol.h"
 #include "memory_mosq.h"
 #include "net_mosq.h"
 #include "util_mosq.h"
@@ -152,8 +153,10 @@ int net__socket_accept(struct mosquitto_db *db, mosq_sock_t listensock)
 	fromhost(&wrap_req);
 	if(!hosts_access(&wrap_req)){
 		/* Access is denied */
-		if(!net__socket_get_address(new_sock, address, 1024)){
-			log__printf(NULL, MOSQ_LOG_NOTICE, "Client connection from %s denied access by tcpd.", address);
+		if(db->config->connection_messages == true){
+			if(!net__socket_get_address(new_sock, address, 1024)){
+				log__printf(NULL, MOSQ_LOG_NOTICE, "Client connection from %s denied access by tcpd.", address);
+			}
 		}
 		COMPAT_CLOSE(new_sock);
 		return -1;
@@ -187,54 +190,54 @@ int net__socket_accept(struct mosquitto_db *db, mosq_sock_t listensock)
 	}
 
 	if(new_context->listener->max_connections > 0 && new_context->listener->client_count > new_context->listener->max_connections){
-		log__printf(NULL, MOSQ_LOG_NOTICE, "Client connection from %s denied: max_connections exceeded.", new_context->address);
+		if(db->config->connection_messages == true){
+			log__printf(NULL, MOSQ_LOG_NOTICE, "Client connection from %s denied: max_connections exceeded.", new_context->address);
+		}
 		context__cleanup(db, new_context, true);
 		return -1;
 	}
 
 #ifdef WITH_TLS
 	/* TLS init */
-	for(i=0; i<db->config->listener_count; i++){
-		for(j=0; j<db->config->listeners[i].sock_count; j++){
-			if(db->config->listeners[i].socks[j] == listensock){
-				if(db->config->listeners[i].ssl_ctx){
-					new_context->ssl = SSL_new(db->config->listeners[i].ssl_ctx);
-					if(!new_context->ssl){
-						context__cleanup(db, new_context, true);
-						return -1;
-					}
-					SSL_set_ex_data(new_context->ssl, tls_ex_index_context, new_context);
-					SSL_set_ex_data(new_context->ssl, tls_ex_index_listener, &db->config->listeners[i]);
-					new_context->want_write = true;
-					bio = BIO_new_socket(new_sock, BIO_NOCLOSE);
-					SSL_set_bio(new_context->ssl, bio, bio);
-					ERR_clear_error();
-					rc = SSL_accept(new_context->ssl);
-					if(rc != 1){
-						rc = SSL_get_error(new_context->ssl, rc);
-						if(rc == SSL_ERROR_WANT_READ){
-							/* We always want to read. */
-						}else if(rc == SSL_ERROR_WANT_WRITE){
-							new_context->want_write = true;
-						}else{
-							e = ERR_get_error();
-							while(e){
-								log__printf(NULL, MOSQ_LOG_NOTICE,
-										"Client connection from %s failed: %s.",
-										new_context->address, ERR_error_string(e, ebuf));
-								e = ERR_get_error();
-							}
-							context__cleanup(db, new_context, true);
-							return -1;
-						}
+	if(new_context->listener->ssl_ctx){
+		new_context->ssl = SSL_new(new_context->listener->ssl_ctx);
+		if(!new_context->ssl){
+			context__cleanup(db, new_context, true);
+			return -1;
+		}
+		SSL_set_ex_data(new_context->ssl, tls_ex_index_context, new_context);
+		SSL_set_ex_data(new_context->ssl, tls_ex_index_listener, new_context->listener);
+		new_context->want_write = true;
+		bio = BIO_new_socket(new_sock, BIO_NOCLOSE);
+		SSL_set_bio(new_context->ssl, bio, bio);
+		ERR_clear_error();
+		rc = SSL_accept(new_context->ssl);
+		if(rc != 1){
+			rc = SSL_get_error(new_context->ssl, rc);
+			if(rc == SSL_ERROR_WANT_READ){
+				/* We always want to read. */
+			}else if(rc == SSL_ERROR_WANT_WRITE){
+				new_context->want_write = true;
+			}else{
+				if(db->config->connection_messages == true){
+					e = ERR_get_error();
+					while(e){
+						log__printf(NULL, MOSQ_LOG_NOTICE,
+								"Client connection from %s failed: %s.",
+								new_context->address, ERR_error_string(e, ebuf));
+						e = ERR_get_error();
 					}
 				}
+				context__cleanup(db, new_context, true);
+				return -1;
 			}
 		}
 	}
 #endif
 
-	log__printf(NULL, MOSQ_LOG_NOTICE, "New connection from %s on port %d.", new_context->address, new_context->listener->port);
+	if(db->config->connection_messages == true){
+		log__printf(NULL, MOSQ_LOG_NOTICE, "New connection from %s on port %d.", new_context->address, new_context->listener->port);
+	}
 
 	return new_sock;
 }
@@ -242,12 +245,14 @@ int net__socket_accept(struct mosquitto_db *db, mosq_sock_t listensock)
 #ifdef WITH_TLS
 static int client_certificate_verify(int preverify_ok, X509_STORE_CTX *ctx)
 {
+	UNUSED(ctx);
+
 	/* Preverify should check expiry, revocation. */
 	return preverify_ok;
 }
 #endif
 
-#ifdef WITH_TLS_PSK
+#ifdef FINAL_WITH_TLS_PSK
 static unsigned int psk_server_callback(SSL *ssl, const char *identity, unsigned char *psk, unsigned int max_psk_len)
 {
 	struct mosquitto_db *db;
@@ -299,11 +304,16 @@ static unsigned int psk_server_callback(SSL *ssl, const char *identity, unsigned
 #endif
 
 #ifdef WITH_TLS
-static int mosquitto__tls_server_ctx(struct mosquitto__listener *listener)
+int net__tls_server_ctx(struct mosquitto__listener *listener)
 {
 	char buf[256];
 	int rc;
+	FILE *dhparamfile;
+	DH *dhparam = NULL;
 
+	if(listener->ssl_ctx){
+		SSL_CTX_free(listener->ssl_ctx);
+	}
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 	listener->ssl_ctx = SSL_CTX_new(SSLv23_server_method());
@@ -317,13 +327,23 @@ static int mosquitto__tls_server_ctx(struct mosquitto__listener *listener)
 	}
 
 	if(listener->tls_version == NULL){
-		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3);
+		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
+#ifdef SSL_OP_NO_TLSv1_3
+	}else if(!strcmp(listener->tls_version, "tlsv1.3")){
+		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2);
 	}else if(!strcmp(listener->tls_version, "tlsv1.2")){
-		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1);
+		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_3);
 	}else if(!strcmp(listener->tls_version, "tlsv1.1")){
-		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_2 | SSL_OP_NO_TLSv1);
-	}else if(!strcmp(listener->tls_version, "tlsv1")){
-		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_2 | SSL_OP_NO_TLSv1_1);
+		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_2 | SSL_OP_NO_TLSv1_3);
+#else
+	}else if(!strcmp(listener->tls_version, "tlsv1.2")){
+		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
+	}else if(!strcmp(listener->tls_version, "tlsv1.1")){
+		SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_2);
+#endif
+	}else{
+		log__printf(NULL, MOSQ_LOG_ERR, "Error: Unsupported tls_version \"%s\".", listener->tls_version);
+		return 1;
 	}
 
 #ifdef SSL_OP_NO_COMPRESSION
@@ -346,6 +366,10 @@ static int mosquitto__tls_server_ctx(struct mosquitto__listener *listener)
 #endif
 #endif
 
+#ifdef SSL_OP_NO_RENEGOTIATION
+	SSL_CTX_set_options(listener->ssl_ctx, SSL_OP_NO_RENEGOTIATION);
+#endif
+
 	snprintf(buf, 256, "mosquitto-%d", listener->port);
 	SSL_CTX_set_session_id_context(listener->ssl_ctx, (unsigned char *)buf, strlen(buf));
 
@@ -362,9 +386,196 @@ static int mosquitto__tls_server_ctx(struct mosquitto__listener *listener)
 			return 1;
 		}
 	}
+	if(listener->dhparamfile){
+		dhparamfile = fopen(listener->dhparamfile, "r");
+		if(!dhparamfile){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error loading dhparamfile \"%s\".", listener->dhparamfile);
+			return 1;
+		}
+		dhparam = PEM_read_DHparams(dhparamfile, NULL, NULL, NULL);
+		fclose(dhparamfile);
+
+		if(dhparam == NULL || SSL_CTX_set_tmp_dh(listener->ssl_ctx, dhparam) != 1){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error loading dhparamfile \"%s\".", listener->dhparamfile);
+			net__print_ssl_error(NULL);
+			return 1;
+		}
+	}
 	return MOSQ_ERR_SUCCESS;
 }
 #endif
+
+
+int net__load_crl_file(struct mosquitto__listener *listener)
+{
+#ifdef WITH_TLS
+	X509_STORE *store;
+	X509_LOOKUP *lookup;
+	int rc;
+
+	store = SSL_CTX_get_cert_store(listener->ssl_ctx);
+	if(!store){
+		log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to obtain TLS store.");
+		net__print_error(MOSQ_LOG_ERR, "Error: %s");
+		return 1;
+	}
+	lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
+	rc = X509_load_crl_file(lookup, listener->crlfile, X509_FILETYPE_PEM);
+	if(rc < 1){
+		log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load certificate revocation file \"%s\". Check crlfile.", listener->crlfile);
+		net__print_error(MOSQ_LOG_ERR, "Error: %s");
+		net__print_ssl_error(NULL);
+		return 1;
+	}
+	X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK);
+#endif
+
+	return MOSQ_ERR_SUCCESS;
+}
+
+
+int net__tls_load_verify(struct mosquitto__listener *listener)
+{
+#ifdef WITH_TLS
+	ENGINE *engine = NULL;
+#  if !defined(OPENSSL_NO_ENGINE)
+	UI_METHOD *ui_method;
+	EVP_PKEY *pkey;
+#  endif
+	int rc;
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+	rc = SSL_CTX_load_verify_locations(listener->ssl_ctx, listener->cafile, listener->capath);
+	if(rc == 0){
+		if(listener->cafile && listener->capath){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check cafile \"%s\" and capath \"%s\".", listener->cafile, listener->capath);
+		}else if(listener->cafile){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check cafile \"%s\".", listener->cafile);
+		}else{
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check capath \"%s\".", listener->capath);
+		}
+		net__print_ssl_error(NULL);
+		return 1;
+	}
+#else
+	if(listener->cafile){
+		rc = SSL_CTX_load_verify_file(listener->ssl_ctx, listener->cafile);
+		if(rc == 0){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check cafile \"%s\".", listener->cafile);
+			net__print_ssl_error(NULL);
+			return MOSQ_ERR_TLS;
+		}
+	}
+	if(listener->capath){
+		rc = SSL_CTX_load_verify_dir(listener->ssl_ctx, listener->capath);
+		if(rc == 0){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check capath \"%s\".", listener->capath);
+			net__print_ssl_error(NULL);
+			return MOSQ_ERR_TLS;
+		}
+	}
+#endif
+
+	if(listener->tls_engine){
+#if !defined(OPENSSL_NO_ENGINE)
+		engine = ENGINE_by_id(listener->tls_engine);
+		if(!engine){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error loading %s engine\n", listener->tls_engine);
+			net__print_ssl_error(NULL);
+			return 1;
+		}
+		if(!ENGINE_init(engine)){
+			log__printf(NULL, MOSQ_LOG_ERR, "Failed engine initialisation\n");
+			net__print_ssl_error(NULL);
+			ENGINE_free(engine);
+			return 1;
+		}
+		ENGINE_set_default(engine, ENGINE_METHOD_ALL);
+		ENGINE_free(engine); /* release the structural reference from ENGINE_by_id() */
+#endif
+	}
+	/* FIXME user data? */
+	if(listener->require_certificate){
+		SSL_CTX_set_verify(listener->ssl_ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, client_certificate_verify);
+	}else{
+		SSL_CTX_set_verify(listener->ssl_ctx, SSL_VERIFY_NONE, client_certificate_verify);
+	}
+	rc = SSL_CTX_use_certificate_chain_file(listener->ssl_ctx, listener->certfile);
+	if(rc != 1){
+		log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load server certificate \"%s\". Check certfile.", listener->certfile);
+		net__print_ssl_error(NULL);
+#if !defined(OPENSSL_NO_ENGINE)
+		ENGINE_FINISH(engine);
+#endif
+		return 1;
+	}
+	if(listener->tls_engine && listener->tls_keyform == mosq_k_engine){
+#if !defined(OPENSSL_NO_ENGINE)
+		ui_method = net__get_ui_method();
+		if(listener->tls_engine_kpass_sha1){
+			if(!ENGINE_ctrl_cmd(engine, ENGINE_SECRET_MODE, ENGINE_SECRET_MODE_SHA, NULL, NULL, 0)){
+				log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to set engine secret mode sha");
+				net__print_ssl_error(NULL);
+				ENGINE_FINISH(engine);
+				return 1;
+			}
+			if(!ENGINE_ctrl_cmd(engine, ENGINE_PIN, 0, listener->tls_engine_kpass_sha1, NULL, 0)){
+				log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to set engine pin");
+				net__print_ssl_error(NULL);
+				ENGINE_FINISH(engine);
+				return 1;
+			}
+			ui_method = NULL;
+		}
+		pkey = ENGINE_load_private_key(engine, listener->keyfile, ui_method, NULL);
+		if(!pkey){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load engine private key file \"%s\".", listener->keyfile);
+			net__print_ssl_error(NULL);
+			ENGINE_FINISH(engine);
+			return 1;
+		}
+		if(SSL_CTX_use_PrivateKey(listener->ssl_ctx, pkey) <= 0){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to use engine private key file \"%s\".", listener->keyfile);
+			net__print_ssl_error(NULL);
+			ENGINE_FINISH(engine);
+			return 1;
+		}
+#endif
+	}else{
+		rc = SSL_CTX_use_PrivateKey_file(listener->ssl_ctx, listener->keyfile, SSL_FILETYPE_PEM);
+		if(rc != 1){
+			log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load server key file \"%s\". Check keyfile.", listener->keyfile);
+			net__print_ssl_error(NULL);
+#if !defined(OPENSSL_NO_ENGINE)
+			ENGINE_FINISH(engine);
+#endif
+			return 1;
+		}
+	}
+	rc = SSL_CTX_check_private_key(listener->ssl_ctx);
+	if(rc != 1){
+		log__printf(NULL, MOSQ_LOG_ERR, "Error: Server certificate/key are inconsistent.");
+		net__print_ssl_error(NULL);
+#if !defined(OPENSSL_NO_ENGINE)
+		ENGINE_FINISH(engine);
+#endif
+		return 1;
+	}
+	/* Load CRLs if they exist. */
+	if(listener->crlfile){
+		rc = net__load_crl_file(listener);
+		if(rc){
+#if !defined(OPENSSL_NO_ENGINE)
+			ENGINE_FINISH(engine);
+#endif
+			return rc;
+		}
+	}
+#endif
+
+	return MOSQ_ERR_SUCCESS;
+}
+
 
 /* Creates a socket and listens on port 'port'.
  * Returns 1 on failure
@@ -376,26 +587,33 @@ int net__socket_listen(struct mosquitto__listener *listener)
 	struct addrinfo hints;
 	struct addrinfo *ainfo, *rp;
 	char service[10];
+	int rc;
 #ifndef WIN32
 	int ss_opt = 1;
 #else
 	char ss_opt = 1;
 #endif
-#ifdef WITH_TLS
-	int rc;
-	X509_STORE *store;
-	X509_LOOKUP *lookup;
+#ifdef SO_BINDTODEVICE
+	struct ifreq ifr;
 #endif
 
 	if(!listener) return MOSQ_ERR_INVAL;
 
 	snprintf(service, 10, "%d", listener->port);
 	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC;
+	if(listener->socket_domain){
+		hints.ai_family = listener->socket_domain;
+	}else{
+		hints.ai_family = AF_UNSPEC;
+	}
 	hints.ai_flags = AI_PASSIVE;
 	hints.ai_socktype = SOCK_STREAM;
 
-	if(getaddrinfo(listener->host, service, &hints, &ainfo)) return INVALID_SOCKET;
+	rc = getaddrinfo(listener->host, service, &hints, &ainfo);
+	if (rc){
+		log__printf(NULL, MOSQ_LOG_ERR, "Error creating listener: %s.", gai_strerror(rc));
+		return INVALID_SOCKET;
+	}
 
 	listener->sock_count = 0;
 	listener->socks = NULL;
@@ -418,6 +636,7 @@ int net__socket_listen(struct mosquitto__listener *listener)
 		listener->socks = mosquitto__realloc(listener->socks, sizeof(mosq_sock_t)*listener->sock_count);
 		if(!listener->socks){
 			log__printf(NULL, MOSQ_LOG_ERR, "Error: Out of memory.");
+			freeaddrinfo(ainfo);
 			return MOSQ_ERR_NOMEM;
 		}
 		listener->socks[listener->sock_count-1] = sock;
@@ -426,21 +645,41 @@ int net__socket_listen(struct mosquitto__listener *listener)
 		ss_opt = 1;
 		setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &ss_opt, sizeof(ss_opt));
 #endif
+#ifdef IPV6_V6ONLY
 		ss_opt = 1;
 		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &ss_opt, sizeof(ss_opt));
+#endif
 
 		if(net__socket_nonblock(&sock)){
+			freeaddrinfo(ainfo);
 			return 1;
 		}
+
+#ifdef SO_BINDTODEVICE
+		if(listener->bind_interface){
+			memset(&ifr, 0, sizeof(ifr));
+			strncpy(ifr.ifr_name, listener->bind_interface, sizeof(ifr.ifr_name)-1);
+			ifr.ifr_name[sizeof(ifr.ifr_name)-1] = '\0';
+			log__printf(NULL, MOSQ_LOG_INFO, "Binding listener to interface \"%s\".", ifr.ifr_name);
+			if(setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
+				net__print_error(MOSQ_LOG_ERR, "Error: %s");
+				COMPAT_CLOSE(sock);
+				freeaddrinfo(ainfo);
+				return 1;
+			}
+		}
+#endif
 
 		if(bind(sock, rp->ai_addr, rp->ai_addrlen) == -1){
 			net__print_error(MOSQ_LOG_ERR, "Error: %s");
 			COMPAT_CLOSE(sock);
+			freeaddrinfo(ainfo);
 			return 1;
 		}
 
 		if(listen(sock, 100) == -1){
 			net__print_error(MOSQ_LOG_ERR, "Error: %s");
+			freeaddrinfo(ainfo);
 			COMPAT_CLOSE(sock);
 			return 1;
 		}
@@ -451,72 +690,16 @@ int net__socket_listen(struct mosquitto__listener *listener)
 	if(listener->sock_count > 0){
 #ifdef WITH_TLS
 		if((listener->cafile || listener->capath) && listener->certfile && listener->keyfile){
-			if(mosquitto__tls_server_ctx(listener)){
+			if(net__tls_server_ctx(listener)){
 				COMPAT_CLOSE(sock);
 				return 1;
 			}
 
-			rc = SSL_CTX_load_verify_locations(listener->ssl_ctx, listener->cafile, listener->capath);
-			if(rc == 0){
-				if(listener->cafile && listener->capath){
-					log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check cafile \"%s\" and capath \"%s\".", listener->cafile, listener->capath);
-				}else if(listener->cafile){
-					log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check cafile \"%s\".", listener->cafile);
-				}else{
-					log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load CA certificates. Check capath \"%s\".", listener->capath);
-				}
-				net__print_error(MOSQ_LOG_ERR, "Error: %s");
+			if(net__tls_load_verify(listener)){
 				COMPAT_CLOSE(sock);
 				return 1;
 			}
-			/* FIXME user data? */
-			if(listener->require_certificate){
-				SSL_CTX_set_verify(listener->ssl_ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, client_certificate_verify);
-			}else{
-				SSL_CTX_set_verify(listener->ssl_ctx, SSL_VERIFY_NONE, client_certificate_verify);
-			}
-			rc = SSL_CTX_use_certificate_chain_file(listener->ssl_ctx, listener->certfile);
-			if(rc != 1){
-				log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load server certificate \"%s\". Check certfile.", listener->certfile);
-				net__print_error(MOSQ_LOG_ERR, "Error: %s");
-				COMPAT_CLOSE(sock);
-				return 1;
-			}
-			rc = SSL_CTX_use_PrivateKey_file(listener->ssl_ctx, listener->keyfile, SSL_FILETYPE_PEM);
-			if(rc != 1){
-				log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load server key file \"%s\". Check keyfile.", listener->keyfile);
-				net__print_error(MOSQ_LOG_ERR, "Error: %s");
-				COMPAT_CLOSE(sock);
-				return 1;
-			}
-			rc = SSL_CTX_check_private_key(listener->ssl_ctx);
-			if(rc != 1){
-				log__printf(NULL, MOSQ_LOG_ERR, "Error: Server certificate/key are inconsistent.");
-				net__print_error(MOSQ_LOG_ERR, "Error: %s");
-				COMPAT_CLOSE(sock);
-				return 1;
-			}
-			/* Load CRLs if they exist. */
-			if(listener->crlfile){
-				store = SSL_CTX_get_cert_store(listener->ssl_ctx);
-				if(!store){
-					log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to obtain TLS store.");
-					net__print_error(MOSQ_LOG_ERR, "Error: %s");
-					COMPAT_CLOSE(sock);
-					return 1;
-				}
-				lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
-				rc = X509_load_crl_file(lookup, listener->crlfile, X509_FILETYPE_PEM);
-				if(rc != 1){
-					log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to load certificate revocation file \"%s\". Check crlfile.", listener->crlfile);
-					net__print_error(MOSQ_LOG_ERR, "Error: %s");
-					COMPAT_CLOSE(sock);
-					return 1;
-				}
-				X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK);
-			}
-
-#  ifdef WITH_TLS_PSK
+#  ifdef FINAL_WITH_TLS_PSK
 		}else if(listener->psk_hint){
 			if(tls_ex_index_context == -1){
 				tls_ex_index_context = SSL_get_ex_new_index(0, "client context", NULL, NULL, NULL);
@@ -525,7 +708,7 @@ int net__socket_listen(struct mosquitto__listener *listener)
 				tls_ex_index_listener = SSL_get_ex_new_index(0, "listener", NULL, NULL, NULL);
 			}
 
-			if(mosquitto__tls_server_ctx(listener)){
+			if(net__tls_server_ctx(listener)){
 				COMPAT_CLOSE(sock);
 				return 1;
 			}
@@ -534,12 +717,12 @@ int net__socket_listen(struct mosquitto__listener *listener)
 				rc = SSL_CTX_use_psk_identity_hint(listener->ssl_ctx, listener->psk_hint);
 				if(rc == 0){
 					log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to set TLS PSK hint.");
-					net__print_error(MOSQ_LOG_ERR, "Error: %s");
+					net__print_ssl_error(NULL);
 					COMPAT_CLOSE(sock);
 					return 1;
 				}
 			}
-#  endif /* WITH_TLS_PSK */
+#  endif /* FINAL_WITH_TLS_PSK */
 		}
 #endif /* WITH_TLS */
 		return 0;
@@ -553,6 +736,7 @@ int net__socket_get_address(mosq_sock_t sock, char *buf, int len)
 	struct sockaddr_storage addr;
 	socklen_t addrlen;
 
+	memset(&addr, 0, sizeof(struct sockaddr_storage));
 	addrlen = sizeof(addr);
 	if(!getpeername(sock, (struct sockaddr *)&addr, &addrlen)){
 		if(addr.ss_family == AF_INET){
